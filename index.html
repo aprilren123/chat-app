@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nudge Chat</title>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "vue": "https://cdn.jsdelivr.net/npm/vue@3.5.32/dist/vue.esm-browser.js",
+        "vue-router": "https://cdn.jsdelivr.net/npm/vue-router@5.0.4/dist/vue-router.esm-browser.prod.js",
+        "@graffiti-garden/implementation-local": "https://cdn.jsdelivr.net/npm/@graffiti-garden/implementation-local@1.2.0/dist/browser/index.js",
+        "@graffiti-garden/implementation-decentralized": "https://cdn.jsdelivr.net/npm/@graffiti-garden/implementation-decentralized@0.0.9/dist/browser/index.js",
+        "@graffiti-garden/wrapper-vue": "https://cdn.jsdelivr.net/npm/@graffiti-garden/wrapper-vue@1.2.2/dist/browser/plugin.mjs"
+      }
+    }
+  </script>
+  <script type="module" src="index.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div id="app">Loading…</div>
+
+  <script type="text/x-template" id="nudge-button-template">
+    <button
+      type="button"
+      :class="buttonClass"
+      :disabled="isPending"
+      :title="title"
+      :aria-label="ariaLabel"
+      @click.stop="onClick"
+    >
+      {{ emoji }}
+    </button>
+  </script>
+
+  <script type="text/x-template" id="app-template">
+    <div class="app-shell">
+      <div v-if="!$graffitiSession?.value" class="login-screen">
+        <div class="login-card">
+          <p class="mini-label">Nudge Chat</p>
+          <h1>Welcome</h1>
+          <p class="subtle">
+            A chat app for sending messages and nudges. Log in with your Graffiti account to get started.
+          </p>
+          <button class="primary-button" type="button" @click="$graffiti.login()">
+            Log in with Graffiti
+          </button>
+        </div>
+      </div>
+      <router-view v-else />
+    </div>
+  </script>
+
+  <script type="text/x-template" id="layout-template">
+    <div class="app-frame">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <p class="mini-label">Messages</p>
+          <div class="sidebar-title-row">
+            <h1>
+              <router-link class="sidebar-title-link" to="/">Nudge Chat</router-link>
+            </h1>
+            <button type="button" class="ghost-button" @click="$graffiti.logout($graffitiSession.value)">
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <section class="new-chat-card">
+          <label for="chat-title" class="section-label">New conversation</label>
+          <div class="new-chat-row">
+            <input
+              id="chat-title"
+              v-model.trim="newChatTitle"
+              type="text"
+              placeholder="Chat title"
+              @keyup.enter="createChat"
+            />
+            <button class="primary-button" type="button" @click="createChat" :disabled="isCreatingChat">
+              {{ isCreatingChat ? 'Creating...' : 'Create' }}
+            </button>
+          </div>
+        </section>
+
+        <section class="sidebar-chats-body">
+          <div class="list-header list-header--chats">
+            <h2>Chats</h2>
+            <div
+              v-if="!isLoadingChats && chats.length"
+              class="chat-filter"
+              role="tablist"
+              aria-label="Chat filter"
+            >
+              <button
+                type="button"
+                id="filter-all"
+                role="tab"
+                :class="{ active: chatFilter === 'all' }"
+                :aria-selected="chatFilter === 'all'"
+                @click="chatFilter = 'all'"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                id="filter-sent"
+                role="tab"
+                :class="{ active: chatFilter === 'nudges-sent' }"
+                :aria-selected="chatFilter === 'nudges-sent'"
+                @click="chatFilter = 'nudges-sent'"
+              >
+                Nudges sent
+              </button>
+              <button
+                type="button"
+                id="filter-received"
+                role="tab"
+                :class="{ active: chatFilter === 'nudges-received' }"
+                :aria-selected="chatFilter === 'nudges-received'"
+                @click="chatFilter = 'nudges-received'"
+              >
+                Nudges received
+              </button>
+            </div>
+          </div>
+
+          <div v-if="isLoadingChats" class="empty-state">
+            Loading chats...
+          </div>
+
+            <ul v-else-if="chats.length && visibleChats.length" class="chat-list">
+            <li
+              v-for="chat in visibleChats"
+              :key="chat.url"
+              class="chat-list-row-wrap"
+            >
+              <router-link
+                v-slot="{ href, isExactActive, navigate }"
+                :to="'/chat/' + encodeURIComponent(chat.channel)"
+                custom
+              >
+                <a
+                  :href="href"
+                  class="chat-row"
+                  :class="{ 'chat-row--active': isExactActive }"
+                  @click="onChatRowClick($event, { navigate, isExactActive })"
+                >
+                  <span class="chat-title">{{ chat.title }}</span>
+                  <span class="chat-preview">Open conversation</span>
+                </a>
+              </router-link>
+              <NudgeButton
+                variant="sidebar"
+                :emoji="nudgeEmojiForSidebarRow(chat)"
+                :is-undo="!!ownLatestNudgeForChannel(chat.channel)"
+                :is-pending="isChatNudgePending(chat.channel)"
+                :title="ownLatestNudgeForChannel(chat.channel) ? 'Undo nudge' : 'Send nudge'"
+                :aria-label="ownLatestNudgeForChannel(chat.channel) ? ('Undo nudge for ' + chat.title) : ('Nudge ' + chat.title)"
+                @toggle="sendNudgeToChat(chat)"
+              />
+            </li>
+          </ul>
+
+          <div
+            v-else-if="chats.length > 0 && !visibleChats.length"
+            class="empty-state"
+          >
+            <template v-if="chatFilter === 'nudges-sent'">No nudged conversations right now.</template>
+            <template v-else-if="chatFilter === 'nudges-received'">
+              No conversations with incoming nudges right now.
+            </template>
+          </div>
+          <div v-else class="empty-state">
+            No chats yet. Create one to get started.
+          </div>
+        </section>
+
+        <div class="sidebar-footer">
+          <router-link class="ghost-button sidebar-link-button" to="/settings">Settings</router-link>
+        </div>
+      </aside>
+
+      <main class="chat-panel">
+        <router-view />
+      </main>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="home-template">
+    <div class="no-chat-selected home-screen">
+      <div class="empty-card">
+        <p class="mini-label">Home</p>
+        <h2>Conversations</h2>
+        <p class="subtle">
+          Pick a chat from the list on the left, or start a new one. To return here, click the
+          current conversation in the list again, or use <strong>Nudge Chat</strong> in the
+          sidebar.
+        </p>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="chat-template">
+    <div class="chat-route">
+      <div v-if="!activeChat" class="no-chat-selected">
+        <div class="empty-card">
+          <p class="mini-label">Messages</p>
+          <h2>Conversation not found</h2>
+          <p class="subtle">
+            This chat may have been removed, or the link is invalid. Pick a chat from the list or go
+            <router-link to="/">home</router-link>.
+          </p>
+        </div>
+      </div>
+
+      <template v-else>
+        <header class="chat-header">
+          <p class="mini-label">Conversation</p>
+          <div
+            class="chat-header-title-row"
+            :class="{ 'chat-header-title-row--has-nudge': activeChatOwnNudge }"
+          >
+            <h2 class="chat-header-title">{{ activeChat.title }}</h2>
+            <p v-if="activeChatOwnNudge" class="chat-nudge-status">
+              <span class="chat-nudge-status-head">
+                <span class="chat-nudge-status-emoji">{{
+                  activeChatOwnNudge.value.emoji || '🔔'
+                }}</span>
+                Nudged
+              </span>
+              <span
+                v-if="nudgeBannerCountdown"
+                class="chat-nudge-status-remaining"
+                :class="{ 'chat-nudge-status-remaining--urgent': nudgeBannerCountdown.urgent }"
+              >
+                {{ nudgeBannerCountdown.text }}
+              </span>
+            </p>
+          </div>
+        </header>
+
+        <section class="messages-area">
+          <div v-if="isLoadingMessages" class="empty-state">
+            Loading messages...
+          </div>
+
+          <div v-else-if="chatItems.length === 0" class="empty-state">
+            No messages yet. Start the conversation or send a nudge.
+          </div>
+
+          <div
+            v-for="item in chatItems"
+            :key="item.url"
+            class="message-row"
+            :class="messageRowClass(item)"
+          >
+            <div class="message-bubble" :class="messageBubbleClass(item)">
+              <template v-if="item.value.type === 'Message'">
+                <p class="message-text">{{ item.value.content }}</p>
+              </template>
+
+              <template v-else-if="item.value.type === 'Nudge'">
+                <p class="nudge-text">{{ item.value.emoji || '🔔' }} Nudge sent</p>
+              </template>
+
+              <p class="message-meta">
+                {{ displayActor(item.actor) }} · {{ formatTime(item.value.published) }}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <footer class="composer">
+          <input
+            v-model.trim="draftMessage"
+            type="text"
+            placeholder="iMessage"
+            @keyup.enter="sendMessageForCurrentChat"
+          />
+          <div class="composer-nudge-slot">
+            <div
+              v-if="showNudgeEmojiPicker"
+              class="nudge-emoji-backdrop"
+              aria-hidden="true"
+              @click="closeComposerNudgeEmojiPicker"
+            />
+            <div
+              v-if="showNudgeEmojiPicker"
+              class="nudge-emoji-picker"
+              role="listbox"
+              aria-label="One-time nudge emoji"
+              @click.stop
+            >
+              <button
+                v-for="e in nudgeEmojiPresets"
+                :key="e"
+                type="button"
+                class="nudge-emoji-option"
+                :title="'Send a nudge with ' + e + ' (this time only)'"
+                @click="pickOneOffNudgeEmoji(e)"
+              >
+                {{ e }}
+              </button>
+            </div>
+            <div class="nudge-bell-row">
+              <NudgeButton
+                variant="composer"
+                :emoji="composerNudgeButtonEmoji"
+                :is-undo="!!activeChatLatestNudge"
+                :is-pending="isChatNudgePending(activeChat.channel)"
+                :title="activeChatLatestNudge ? 'Undo nudge' : 'Send nudge'"
+                :aria-label="activeChatLatestNudge ? ('Undo nudge for ' + activeChat.title) : ('Nudge for ' + activeChat.title)"
+                @toggle="sendNudgeForCurrentChat"
+              />
+              <button
+                type="button"
+                class="nudge-picker-chevron"
+                :disabled="isChatNudgePending(activeChat.channel)"
+                title="Choose a different emoji for this nudge only"
+                aria-label="Choose a different emoji for this nudge only. Does not change the default in Settings"
+                @click.stop="openComposerNudgeEmojiPicker"
+              >
+                ▾
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="primary-button"
+            @click="sendMessageForCurrentChat"
+            :disabled="isSendingMessage"
+          >
+            {{ isSendingMessage ? 'Sending...' : 'Send' }}
+          </button>
+        </footer>
+      </template>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="settings-template">
+    <div class="settings-page">
+      <div class="settings-page-brand">
+        <p class="mini-label settings-rhythm-spacer" aria-hidden="true">Messages</p>
+        <div class="sidebar-title-row">
+          <router-link to="/" class="ghost-button sidebar-link-button">← Back to home</router-link>
+        </div>
+      </div>
+      <p class="mini-label">Settings</p>
+      <h2>Default nudge emoji</h2>
+      <p class="subtle settings-lede">
+        Used when you send a nudge from a conversation or the chat list. Change your choice anytime.
+      </p>
+      <div class="settings-emoji-block">
+        <p class="section-label">Choose emoji</p>
+        <div class="nudge-emoji-picker nudge-emoji-picker--inline" role="listbox" aria-label="Default nudge emoji">
+          <button
+            v-for="e in nudgeEmojiPresets"
+            :key="e"
+            type="button"
+            class="nudge-emoji-option"
+            :class="{ selected: e === defaultNudgeEmoji }"
+            @click="setDefaultNudgeEmoji(e)"
+          >
+            {{ e }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </script>
+</body>
+</html>
