@@ -17,8 +17,15 @@ function chatDirectoryChannel(actor) {
 const NUDGE_EMOJI_STORAGE_KEY = 'nudge-default-emoji';
 /** Nudges older than this are hidden in the thread */
 const NUDGE_VISIBLE_MS = 24 * 60 * 60 * 1000;
+/** Newly posted nudges get a one-time pop animation */
+const NUDGE_POP_ANIMATION_MS = 1800;
+/** Undoing a nudge plays a short pop-out animation */
+const NUDGE_POP_OUT_ANIMATION_MS = 260;
 /** Banner countdown turns red when this much time or less remains */
 const NUDGE_BANNER_URGENT_MS = 60 * 60 * 1000;
+/** Typing indicator signal timing */
+const TYPING_SIGNAL_TTL_MS = 3500;
+const TYPING_SIGNAL_THROTTLE_MS = 1200;
 
 const NUDGE_EMOJI_PRESETS = [
   '🔔', '👋', '✨', '❤️', '🎉', '⚡️', '🔕', '🙌', '💬', '👀', '🤔', '⭐️', '🫶', '💥',
@@ -47,6 +54,11 @@ function formatNudgeTimeRemaining(ms) {
     return `${totalMin}m ${sec}s left`;
   }
   return `${sec}s left`;
+}
+
+function nudgeObjectKey(obj) {
+  if (!obj?.url) return '';
+  return `${obj.url}|${obj.actor || ''}|${obj.value?.published || 0}`;
 }
 
 function useNudgeStore() {
@@ -150,12 +162,40 @@ function createNudgeState() {
       );
 
       draftMessage.value = '';
+      await postTypingSignal(channel, false);
     } finally {
       isSendingMessage.value = false;
     }
   }
 
+  async function postTypingSignal(channel, isTyping) {
+    if (!session.value || !channel) return;
+    const now = Date.now();
+    const prev = typingSignalStateByChannel.value.get(channel);
+    if (isTyping && prev?.isTyping && now - prev.sentAt < TYPING_SIGNAL_THROTTLE_MS) return;
+
+    await graffiti.post(
+      {
+        value: {
+          activity: 'Signal',
+          type: 'Typing',
+          isTyping,
+          published: now,
+          expiresAt: isTyping ? now + TYPING_SIGNAL_TTL_MS : now,
+        },
+        channels: [channel],
+      },
+      session.value
+    );
+
+    const next = new Map(typingSignalStateByChannel.value);
+    next.set(channel, { isTyping, sentAt: now });
+    typingSignalStateByChannel.value = next;
+  }
+
   const nudgeTombstonedObjectUrls = ref(/** @type {Set<string>} */ (new Set()));
+  const nudgeDisappearingObjectUrls = ref(/** @type {Set<string>} */ (new Set()));
+  const typingSignalStateByChannel = ref(new Map());
 
   function getOwnLatestNudge(objects, channel, actor) {
     if (!actor || !channel) return null;
@@ -164,7 +204,7 @@ function createNudgeState() {
       o =>
         o &&
         o.url &&
-        !hidden.has(o.url) &&
+        !hidden.has(nudgeObjectKey(o)) &&
         o.channels?.includes(channel) &&
         o.value?.type === 'Nudge' &&
         o.actor === actor
@@ -217,22 +257,31 @@ function createNudgeState() {
     if (!session.value || !channel) return;
     if (nudgePendingChannels.value.has(channel)) return;
 
-    const latest = getOwnLatestNudge(allChannelObjects.value, channel, session.value.actor);
+    const latest = getOwnVisibleNudge(allChannelObjects.value, channel, session.value.actor);
 
     nudgePendingChannels.value = new Set(nudgePendingChannels.value).add(channel);
 
     try {
       if (latest) {
-        nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(
-          latest.url
-        );
+        const latestKey = nudgeObjectKey(latest);
+        nudgeDisappearingObjectUrls.value = new Set(nudgeDisappearingObjectUrls.value).add(latestKey);
+        await nextTick();
+        await new Promise(r => setTimeout(r, NUDGE_POP_OUT_ANIMATION_MS));
+
+        nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(latestKey);
         await nextTick();
         try {
           await graffiti.delete(latest.url, session.value);
+          const doneDisappearing = new Set(nudgeDisappearingObjectUrls.value);
+          doneDisappearing.delete(latestKey);
+          nudgeDisappearingObjectUrls.value = doneDisappearing;
         } catch (err) {
           const nextT = new Set(nudgeTombstonedObjectUrls.value);
-          nextT.delete(latest.url);
+          nextT.delete(latestKey);
           nudgeTombstonedObjectUrls.value = nextT;
+          const nextD = new Set(nudgeDisappearingObjectUrls.value);
+          nextD.delete(latestKey);
+          nudgeDisappearingObjectUrls.value = nextD;
           throw err;
         }
       } else {
@@ -321,16 +370,35 @@ function createNudgeState() {
   }
 
   function messageBubbleClass(item) {
+    const isNudge = item.value?.type === 'Nudge';
+    const isFresh = isFreshNudge(item);
+    const isDisappearing = isDisappearingNudge(item);
     return {
       'own-bubble': isOwnMessage(item),
       'other-bubble': !isOwnMessage(item) && item.value?.type === 'Message',
-      'nudge-bubble': item.value?.type === 'Nudge',
+      'nudge-bubble': isNudge,
+      'nudge-bubble--pop': isFresh,
+      'nudge-bubble--pop-out': isDisappearing,
     };
+  }
+
+  function isFreshNudge(item) {
+    if (!item || item.value?.type !== 'Nudge') return false;
+    return Date.now() - (item.value?.published ?? 0) <= NUDGE_POP_ANIMATION_MS;
+  }
+
+  function isDisappearingNudge(item) {
+    if (!item || item.value?.type !== 'Nudge' || !item.url) return false;
+    return nudgeDisappearingObjectUrls.value.has(nudgeObjectKey(item));
   }
 
   function displayActor(actor) {
     if (actor === session.value?.actor) return 'You';
     return 'User';
+  }
+
+  function isOwnActor(actor) {
+    return actor === session.value?.actor;
   }
 
   function scrollMessagesToBottom() {
@@ -348,7 +416,7 @@ function createNudgeState() {
     for (const o of objects) {
       if (!o?.channels?.length) continue;
       if (o.value?.type !== 'Nudge' || o.actor === me) continue;
-      if (nudgeTombstonedObjectUrls.value.has(o.url)) continue;
+      if (nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(o))) continue;
       const p = o.value?.published ?? 0;
       if (Date.now() - p > NUDGE_VISIBLE_MS) continue;
       for (const ch of o.channels) out.add(ch);
@@ -389,12 +457,16 @@ function createNudgeState() {
     formatTime,
     messageRowClass,
     messageBubbleClass,
+    isFreshNudge,
+    isDisappearingNudge,
     displayActor,
+    isOwnActor,
     ownVisibleNudgeMap,
     ownLatestNudgeMap,
     nudgeTombstonedObjectUrls,
     toggleNudgeForChannel,
     postNudgeWithEmoji,
+    postTypingSignal,
     scrollMessagesToBottom,
   };
 }
@@ -415,7 +487,7 @@ function useChatPageState() {
     const ch = activeChat.value.channel;
     return s.allChannelObjects.value
       .filter(obj => {
-        if (s.nudgeTombstonedObjectUrls.value.has(obj?.url)) return false;
+        if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
         if (!obj.channels?.includes(ch)) return false;
         if (obj.value?.type === 'Message') return true;
         if (obj.value?.type === 'Nudge') {
@@ -445,6 +517,35 @@ function useChatPageState() {
       return n.value.emoji || '🔔';
     }
     return s.defaultNudgeEmoji.value;
+  });
+  const showTypingIndicator = computed(() => {
+    return !!activeChat.value && !!s.draftMessage.value;
+  });
+  const showOwnTypingIndicator = computed(() => showTypingIndicator.value);
+  const showOtherTypingIndicator = computed(() => {
+    const ch = activeChat.value?.channel;
+    if (!ch) return false;
+
+    const latestByActor = new Map();
+    for (const obj of s.allChannelObjects.value) {
+      if (!obj?.channels?.includes(ch)) continue;
+      if (obj.value?.type !== 'Typing') continue;
+      if (s.isOwnActor(obj.actor)) continue;
+      const actor = obj.actor || '';
+      const published = obj.value?.published ?? 0;
+      const prev = latestByActor.get(actor);
+      if (!prev || published > (prev.value?.published ?? 0)) {
+        latestByActor.set(actor, obj);
+      }
+    }
+
+    const now = nowTick.value;
+    for (const obj of latestByActor.values()) {
+      const isTyping = !!obj.value?.isTyping;
+      const expiresAt = obj.value?.expiresAt ?? ((obj.value?.published ?? 0) + TYPING_SIGNAL_TTL_MS);
+      if (isTyping && expiresAt > now) return true;
+    }
+    return false;
   });
 
   const nowTick = ref(Date.now());
@@ -490,6 +591,20 @@ function useChatPageState() {
       s.scrollMessagesToBottom();
     }
   );
+  watch(showTypingIndicator, async () => {
+    await nextTick();
+    s.scrollMessagesToBottom();
+  });
+  watch(
+    [() => activeChat.value?.channel, () => s.draftMessage.value],
+    async ([channel, draft], [prevChannel]) => {
+      if (prevChannel && prevChannel !== channel) {
+        await s.postTypingSignal(prevChannel, false);
+      }
+      if (!channel) return;
+      await s.postTypingSignal(channel, !!draft);
+    }
+  );
 
   function openComposerNudgeEmojiPicker() {
     showNudgeEmojiPicker.value = true;
@@ -510,11 +625,16 @@ function useChatPageState() {
     activeChatOwnNudge,
     activeChatLatestNudge,
     composerNudgeButtonEmoji,
+    showTypingIndicator,
+    showOwnTypingIndicator,
+    showOtherTypingIndicator,
     nudgeBannerCountdown,
     showNudgeEmojiPicker,
     openComposerNudgeEmojiPicker,
     closeComposerNudgeEmojiPicker,
     pickOneOffNudgeEmoji,
+    isFreshNudge: s.isFreshNudge,
+    isDisappearingNudge: s.isDisappearingNudge,
   };
 }
 
@@ -603,6 +723,7 @@ const NudgeButton = {
       if (this.variant === 'composer') {
         return {
           'ghost-icon-button': true,
+          'chat-composer-nudge': true,
           'nudge-bell-button--undo': this.isUndo,
         };
       }

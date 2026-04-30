@@ -156,10 +156,10 @@
               <NudgeButton
                 variant="sidebar"
                 :emoji="nudgeEmojiForSidebarRow(chat)"
-                :is-undo="!!ownLatestNudgeForChannel(chat.channel)"
+                :is-undo="!!ownVisibleNudgeMap[chat.channel]"
                 :is-pending="isChatNudgePending(chat.channel)"
-                :title="ownLatestNudgeForChannel(chat.channel) ? 'Undo nudge' : 'Send nudge'"
-                :aria-label="ownLatestNudgeForChannel(chat.channel) ? ('Undo nudge for ' + chat.title) : ('Nudge ' + chat.title)"
+                :title="ownVisibleNudgeMap[chat.channel] ? 'Undo nudge' : 'Send nudge'"
+                :aria-label="ownVisibleNudgeMap[chat.channel] ? ('Undo nudge for ' + chat.title) : ('Nudge ' + chat.title)"
                 @toggle="sendNudgeToChat(chat)"
               />
             </li>
@@ -225,7 +225,14 @@
             :class="{ 'chat-header-title-row--has-nudge': activeChatOwnNudge }"
           >
             <h2 class="chat-header-title">{{ activeChat.title }}</h2>
-            <p v-if="activeChatOwnNudge" class="chat-nudge-status">
+            <p
+              v-if="activeChatOwnNudge"
+              class="chat-nudge-status"
+              :class="{
+                'chat-nudge-status--pop': isFreshNudge(activeChatOwnNudge),
+                'chat-nudge-status--pop-out': isDisappearingNudge(activeChatOwnNudge),
+              }"
+            >
               <span class="chat-nudge-status-head">
                 <span class="chat-nudge-status-emoji">{{
                   activeChatOwnNudge.value.emoji || '🔔'
@@ -272,6 +279,22 @@
               </p>
             </div>
           </div>
+
+          <div v-if="showOtherTypingIndicator" class="message-row other">
+            <div class="message-bubble other-bubble typing-indicator-bubble typing-indicator-bubble--other" aria-live="polite" aria-label="Other user typing">
+              <span class="typing-dot" />
+              <span class="typing-dot" />
+              <span class="typing-dot" />
+            </div>
+          </div>
+
+          <div v-if="showOwnTypingIndicator" class="message-row own">
+            <div class="message-bubble own-bubble typing-indicator-bubble typing-indicator-bubble--own" aria-live="polite" aria-label="You are typing">
+              <span class="typing-dot" />
+              <span class="typing-dot" />
+              <span class="typing-dot" />
+            </div>
+          </div>
         </section>
 
         <footer class="composer">
@@ -310,10 +333,10 @@
               <NudgeButton
                 variant="composer"
                 :emoji="composerNudgeButtonEmoji"
-                :is-undo="!!activeChatLatestNudge"
+                :is-undo="!!activeChatOwnNudge"
                 :is-pending="isChatNudgePending(activeChat.channel)"
-                :title="activeChatLatestNudge ? 'Undo nudge' : 'Send nudge'"
-                :aria-label="activeChatLatestNudge ? ('Undo nudge for ' + activeChat.title) : ('Nudge for ' + activeChat.title)"
+                :title="activeChatOwnNudge ? 'Undo nudge' : 'Send nudge'"
+                :aria-label="activeChatOwnNudge ? ('Undo nudge for ' + activeChat.title) : ('Nudge for ' + activeChat.title)"
                 @toggle="sendNudgeForCurrentChat"
               />
               <button
