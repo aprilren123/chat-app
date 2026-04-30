@@ -14,6 +14,10 @@ function chatDirectoryChannel(actor) {
   return `${actor}/nudge-chats`;
 }
 
+function joinedChatsStorageKey(actor) {
+  return `nudge-joined-chats:${actor || 'anon'}`;
+}
+
 const NUDGE_EMOJI_STORAGE_KEY = 'nudge-default-emoji';
 /** Nudges older than this are hidden in the thread */
 const NUDGE_VISIBLE_MS = 24 * 60 * 60 * 1000;
@@ -61,6 +65,17 @@ function nudgeObjectKey(obj) {
   return `${obj.url}|${obj.actor || ''}|${obj.value?.published || 0}`;
 }
 
+function normalizeChannelInput(raw) {
+  if (!raw) return '';
+  const t = raw.trim();
+  if (!t) return '';
+  try {
+    return decodeURIComponent(t);
+  } catch {
+    return t;
+  }
+}
+
 function useNudgeStore() {
   return inject(NUDGE);
 }
@@ -71,9 +86,42 @@ function createNudgeState() {
   const session = useGraffitiSession();
 
   const newChatTitle = ref('');
+  const joinChatChannel = ref('');
   const draftMessage = ref('');
 
   const defaultNudgeEmoji = ref(loadSavedNudgeEmoji());
+  const joinedChats = ref([]);
+  const isJoiningChat = ref(false);
+
+  watch(
+    () => session.value?.actor,
+    actor => {
+      if (!actor) {
+        joinedChats.value = [];
+        return;
+      }
+      try {
+        const raw = localStorage.getItem(joinedChatsStorageKey(actor));
+        const parsed = raw ? JSON.parse(raw) : [];
+        joinedChats.value = Array.isArray(parsed)
+          ? parsed.filter(c => typeof c?.channel === 'string' && c.channel)
+          : [];
+      } catch {
+        joinedChats.value = [];
+      }
+    },
+    { immediate: true }
+  );
+
+  function saveJoinedChats() {
+    const actor = session.value?.actor;
+    if (!actor) return;
+    try {
+      localStorage.setItem(joinedChatsStorageKey(actor), JSON.stringify(joinedChats.value));
+    } catch {
+      /* ignore */
+    }
+  }
 
   function setDefaultNudgeEmoji(emoji) {
     defaultNudgeEmoji.value = emoji;
@@ -92,7 +140,7 @@ function createNudgeState() {
   );
 
   const chats = computed(() => {
-    return chatObjects.value
+    const owned = chatObjects.value
       .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
       .map(obj => ({
         ...obj.value,
@@ -100,6 +148,21 @@ function createNudgeState() {
         actor: obj.actor,
       }))
       .sort((a, b) => (a.published || 0) - (b.published || 0));
+
+    const byChannel = new Map(owned.map(c => [c.channel, c]));
+    for (const jc of joinedChats.value) {
+      if (byChannel.has(jc.channel)) continue;
+      byChannel.set(jc.channel, {
+        activity: 'Join',
+        type: 'Chat',
+        title: `Joined ${jc.channel.slice(0, 8)}`,
+        channel: jc.channel,
+        published: jc.published || Date.now(),
+        url: `joined:${jc.channel}`,
+        actor: session.value?.actor,
+      });
+    }
+    return Array.from(byChannel.values()).sort((a, b) => (a.published || 0) - (b.published || 0));
   });
 
   const { objects: allChannelObjects, isFirstPoll: isLoadingMessages, poll: pollChannelObjects } =
@@ -140,6 +203,27 @@ function createNudgeState() {
       await router.push('/chat/' + encodeURIComponent(chatChannel));
     } finally {
       isCreatingChat.value = false;
+    }
+  }
+
+  async function joinChatByChannel() {
+    if (!session.value) return;
+    const channel = normalizeChannelInput(joinChatChannel.value);
+    if (!channel) return;
+
+    isJoiningChat.value = true;
+    try {
+      const next = [
+        ...joinedChats.value.filter(c => c.channel !== channel),
+        { channel, published: Date.now() },
+      ];
+      joinedChats.value = next;
+      saveJoinedChats();
+      joinChatChannel.value = '';
+      await nextTick();
+      await router.push('/chat/' + encodeURIComponent(channel));
+    } finally {
+      isJoiningChat.value = false;
     }
   }
 
@@ -406,31 +490,20 @@ function createNudgeState() {
     if (box) box.scrollTop = box.scrollHeight;
   }
 
-  const chatFilter = ref(/** @type {'all' | 'nudges-sent' | 'nudges-received'} */ ('all'));
-
-  const receivedVisibleNudgeChannelSet = computed(() => {
-    const me = session.value?.actor;
-    if (!me) return new Set();
-    const objects = allChannelObjects.value;
-    const out = new Set();
-    for (const o of objects) {
-      if (!o?.channels?.length) continue;
-      if (o.value?.type !== 'Nudge' || o.actor === me) continue;
-      if (nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(o))) continue;
-      const p = o.value?.published ?? 0;
-      if (Date.now() - p > NUDGE_VISIBLE_MS) continue;
-      for (const ch of o.channels) out.add(ch);
-    }
-    return out;
-  });
+  const chatFilter = ref(/** @type {'all' | 'nudges'} */ ('all'));
 
   const visibleChats = computed(() => {
     const list = chats.value;
-    if (chatFilter.value === 'nudges-sent') {
-      return list.filter(c => ownVisibleNudgeMap.value[c.channel]);
-    }
-    if (chatFilter.value === 'nudges-received') {
-      return list.filter(c => receivedVisibleNudgeChannelSet.value.has(c.channel));
+    if (chatFilter.value === 'nudges') {
+      return list.filter(c =>
+        allChannelObjects.value.some(o => {
+          if (!o?.channels?.includes(c.channel)) return false;
+          if (o.value?.type !== 'Nudge') return false;
+          if (nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(o))) return false;
+          const p = o.value?.published ?? 0;
+          return Date.now() - p <= NUDGE_VISIBLE_MS;
+        })
+      );
     }
     return list;
   });
@@ -449,7 +522,10 @@ function createNudgeState() {
     defaultNudgeEmoji,
     nudgeEmojiPresets: NUDGE_EMOJI_PRESETS,
     setDefaultNudgeEmoji,
+    joinChatChannel,
+    isJoiningChat,
     createChat,
+    joinChatByChannel,
     sendMessageToChannel,
     sendNudgeToChat,
     ownLatestNudgeForChannel,

@@ -84,6 +84,20 @@
               {{ isCreatingChat ? 'Creating...' : 'Create' }}
             </button>
           </div>
+
+          <label for="join-chat-channel" class="section-label" style="margin-top: 10px;">Join by channel</label>
+          <div class="new-chat-row">
+            <input
+              id="join-chat-channel"
+              v-model.trim="joinChatChannel"
+              type="text"
+              placeholder="Channel ID"
+              @keyup.enter="joinChatByChannel"
+            />
+            <button class="primary-button" type="button" @click="joinChatByChannel" :disabled="isJoiningChat">
+              {{ isJoiningChat ? 'Joining...' : 'Join' }}
+            </button>
+          </div>
         </section>
 
         <section class="sidebar-chats-body">
@@ -107,23 +121,13 @@
               </button>
               <button
                 type="button"
-                id="filter-sent"
+                id="filter-nudges"
                 role="tab"
-                :class="{ active: chatFilter === 'nudges-sent' }"
-                :aria-selected="chatFilter === 'nudges-sent'"
-                @click="chatFilter = 'nudges-sent'"
+                :class="{ active: chatFilter === 'nudges' }"
+                :aria-selected="chatFilter === 'nudges'"
+                @click="chatFilter = 'nudges'"
               >
-                Nudges sent
-              </button>
-              <button
-                type="button"
-                id="filter-received"
-                role="tab"
-                :class="{ active: chatFilter === 'nudges-received' }"
-                :aria-selected="chatFilter === 'nudges-received'"
-                @click="chatFilter = 'nudges-received'"
-              >
-                Nudges received
+                Nudges
               </button>
             </div>
           </div>
@@ -169,10 +173,7 @@
             v-else-if="chats.length > 0 && !visibleChats.length"
             class="empty-state"
           >
-            <template v-if="chatFilter === 'nudges-sent'">No nudged conversations right now.</template>
-            <template v-else-if="chatFilter === 'nudges-received'">
-              No conversations with incoming nudges right now.
-            </template>
+            <template v-if="chatFilter === 'nudges'">No nudged conversations right now.</template>
           </div>
           <div v-else class="empty-state">
             No chats yet. Create one to get started.
