@@ -139,6 +139,20 @@ function createNudgeState() {
     true
   );
 
+  /** Latest activity in a channel (messages / nudges / reads) for recency sorting */
+  function getChannelLastActivityMs(objects, channel) {
+    if (!channel || !objects?.length) return 0;
+    let latest = 0;
+    for (const o of objects) {
+      if (!o?.channels?.includes(channel)) continue;
+      const typ = o.value?.type;
+      if (typ !== 'Message' && typ !== 'Nudge' && typ !== 'NudgeRead') continue;
+      const p = o.value?.published ?? 0;
+      if (p > latest) latest = p;
+    }
+    return latest;
+  }
+
   const chats = computed(() => {
     const owned = chatObjects.value
       .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
@@ -146,8 +160,7 @@ function createNudgeState() {
         ...obj.value,
         url: obj.url,
         actor: obj.actor,
-      }))
-      .sort((a, b) => (b.published || 0) - (a.published || 0));
+      }));
 
     const titleByChannel = Object.create(null);
     for (const o of allChannelObjects.value || []) {
@@ -181,7 +194,14 @@ function createNudgeState() {
         actor: session.value?.actor,
       });
     }
-    return Array.from(byChannel.values()).sort((a, b) => (b.published || 0) - (a.published || 0));
+    const objects = allChannelObjects.value || [];
+    return Array.from(byChannel.values()).sort((a, b) => {
+      const chA = a.channel;
+      const chB = b.channel;
+      const aRecency = Math.max(a.published || 0, getChannelLastActivityMs(objects, chA));
+      const bRecency = Math.max(b.published || 0, getChannelLastActivityMs(objects, chB));
+      return bRecency - aRecency;
+    });
   });
 
   const { objects: allChannelObjects, isFirstPoll: isLoadingMessages, poll: pollChannelObjects } =
