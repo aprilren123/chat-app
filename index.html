@@ -92,7 +92,6 @@
               v-model.trim="joinChatChannel"
               type="text"
               placeholder="Channel ID"
-              @keyup.enter="joinChatByChannel"
             />
             <button class="primary-button" type="button" @click="joinChatByChannel" :disabled="isJoiningChat">
               {{ isJoiningChat ? 'Joining...' : 'Join' }}
