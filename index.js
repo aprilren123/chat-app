@@ -92,6 +92,15 @@ function createNudgeState() {
   const defaultNudgeEmoji = ref(loadSavedNudgeEmoji());
   const joinedChats = ref([]);
   const isJoiningChat = ref(false);
+  /** Bumps when channel objects change so chat list resort tracks remote activity */
+  const listResortNonce = ref(0);
+  /** Local “last interacted” time per channel (create / join / send / nudge) */
+  const channelListOrderTouch = ref(/** @type {Record<string, number>} */ ({}));
+
+  function touchConversationListOrder(channel) {
+    if (!channel) return;
+    channelListOrderTouch.value = { ...channelListOrderTouch.value, [channel]: Date.now() };
+  }
 
   watch(
     () => session.value?.actor,
@@ -139,21 +148,23 @@ function createNudgeState() {
     true
   );
 
-  /** Latest activity in a channel (messages / nudges / reads) for recency sorting */
+  /** Latest activity in a channel for recency sorting (includes title so new rooms rank high). */
   function getChannelLastActivityMs(objects, channel) {
     if (!channel || !objects?.length) return 0;
     let latest = 0;
     for (const o of objects) {
       if (!o?.channels?.includes(channel)) continue;
       const typ = o.value?.type;
-      if (typ !== 'Message' && typ !== 'Nudge' && typ !== 'NudgeRead') continue;
-      const p = o.value?.published ?? 0;
+      if (typ !== 'Message' && typ !== 'Nudge' && typ !== 'NudgeRead' && typ !== 'ChatTitle') continue;
+      const p = Number(o.value?.published) || 0;
       if (p > latest) latest = p;
     }
     return latest;
   }
 
   const chats = computed(() => {
+    void listResortNonce.value;
+    const touches = channelListOrderTouch.value;
     const owned = chatObjects.value
       .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
       .map(obj => ({
@@ -198,9 +209,21 @@ function createNudgeState() {
     return Array.from(byChannel.values()).sort((a, b) => {
       const chA = a.channel;
       const chB = b.channel;
-      const aRecency = Math.max(a.published || 0, getChannelLastActivityMs(objects, chA));
-      const bRecency = Math.max(b.published || 0, getChannelLastActivityMs(objects, chB));
-      return bRecency - aRecency;
+      const aRecency = Math.max(
+        Number(a.published) || 0,
+        getChannelLastActivityMs(objects, chA),
+        touches[chA] || 0
+      );
+      const bRecency = Math.max(
+        Number(b.published) || 0,
+        getChannelLastActivityMs(objects, chB),
+        touches[chB] || 0
+      );
+      if (bRecency !== aRecency) return bRecency - aRecency;
+      const ap = Number(a.published) || 0;
+      const bp = Number(b.published) || 0;
+      if (bp !== ap) return bp - ap;
+      return String(b.channel).localeCompare(String(a.channel));
     });
   });
 
@@ -222,6 +245,14 @@ function createNudgeState() {
       session,
       true
     );
+
+  watch(
+    allChannelObjects,
+    () => {
+      listResortNonce.value++;
+    },
+    { deep: true }
+  );
 
   const isCreatingChat = ref(false);
   const isSendingMessage = ref(false);
@@ -260,6 +291,7 @@ function createNudgeState() {
         session.value
       );
 
+      touchConversationListOrder(chatChannel);
       newChatTitle.value = '';
       await loadChats();
       await router.push('/chat/' + encodeURIComponent(chatChannel));
@@ -281,6 +313,7 @@ function createNudgeState() {
       ];
       joinedChats.value = next;
       saveJoinedChats();
+      touchConversationListOrder(channel);
       joinChatChannel.value = '';
       await nextTick();
       await router.push('/chat/' + encodeURIComponent(channel));
@@ -309,6 +342,7 @@ function createNudgeState() {
 
       draftMessage.value = '';
       await postTypingSignal(channel, false);
+      touchConversationListOrder(channel);
     } finally {
       isSendingMessage.value = false;
     }
@@ -498,6 +532,7 @@ function createNudgeState() {
       await new Promise(r => {
         requestAnimationFrame(() => requestAnimationFrame(r));
       });
+      touchConversationListOrder(channel);
     } finally {
       const done = new Set(nudgePendingChannels.value);
       done.delete(channel);
@@ -533,6 +568,7 @@ function createNudgeState() {
       await new Promise(r => {
         requestAnimationFrame(() => requestAnimationFrame(r));
       });
+      touchConversationListOrder(channel);
     } finally {
       const done = new Set(nudgePendingChannels.value);
       done.delete(channel);
