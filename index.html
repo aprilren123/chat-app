@@ -159,10 +159,10 @@
               <NudgeButton
                 variant="sidebar"
                 :emoji="nudgeEmojiForSidebarRow(chat)"
-                :is-undo="!!ownVisibleNudgeMap[chat.channel]"
+                :is-undo="!!latestVisibleNudgeMap[chat.channel]"
                 :is-pending="isChatNudgePending(chat.channel)"
-                :title="ownVisibleNudgeMap[chat.channel] ? 'Undo nudge' : 'Send nudge'"
-                :aria-label="ownVisibleNudgeMap[chat.channel] ? ('Undo nudge for ' + chat.title) : ('Nudge ' + chat.title)"
+                :title="latestVisibleNudgeMap[chat.channel] ? 'Undo nudge' : 'Send nudge'"
+                :aria-label="latestVisibleNudgeMap[chat.channel] ? ('Undo nudge for ' + chat.title) : ('Nudge ' + chat.title)"
                 @toggle="sendNudgeToChat(chat)"
               />
             </li>
@@ -222,20 +222,20 @@
           <p class="mini-label">Conversation</p>
           <div
             class="chat-header-title-row"
-            :class="{ 'chat-header-title-row--has-nudge': activeChatOwnNudge }"
+            :class="{ 'chat-header-title-row--has-nudge': activeChatVisibleNudge }"
           >
             <h2 class="chat-header-title">{{ activeChat.title }}</h2>
             <p
-              v-if="activeChatOwnNudge"
+              v-if="activeChatVisibleNudge"
               class="chat-nudge-status"
               :class="{
-                'chat-nudge-status--pop': isFreshNudge(activeChatOwnNudge),
-                'chat-nudge-status--pop-out': isDisappearingNudge(activeChatOwnNudge),
+                'chat-nudge-status--pop': isFreshNudge(activeChatVisibleNudge),
+                'chat-nudge-status--pop-out': isDisappearingNudge(activeChatVisibleNudge),
               }"
             >
               <span class="chat-nudge-status-head">
                 <span class="chat-nudge-status-emoji">{{
-                  activeChatOwnNudge.value.emoji || '🔔'
+                  activeChatVisibleNudge.value.emoji || '🔔'
                 }}</span>
                 Nudged
               </span>
@@ -272,6 +272,10 @@
 
               <template v-else-if="item.value.type === 'Nudge'">
                 <p class="nudge-text">{{ item.value.emoji || '🔔' }} Nudge sent</p>
+              </template>
+
+              <template v-else-if="item.value.type === 'NudgeRead'">
+                <p class="nudge-text">{{ item.value.emoji || '🔔' }} nudge read</p>
               </template>
 
               <p class="message-meta">
@@ -333,10 +337,10 @@
               <NudgeButton
                 variant="composer"
                 :emoji="composerNudgeButtonEmoji"
-                :is-undo="!!activeChatOwnNudge"
+                :is-undo="!!activeChatVisibleNudge"
                 :is-pending="isChatNudgePending(activeChat.channel)"
-                :title="activeChatOwnNudge ? 'Undo nudge' : 'Send nudge'"
-                :aria-label="activeChatOwnNudge ? ('Undo nudge for ' + activeChat.title) : ('Nudge for ' + activeChat.title)"
+                :title="activeChatVisibleNudge ? 'Undo nudge' : 'Send nudge'"
+                :aria-label="activeChatVisibleNudge ? ('Undo nudge for ' + activeChat.title) : ('Nudge for ' + activeChat.title)"
                 @toggle="sendNudgeForCurrentChat"
               />
               <button
