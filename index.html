@@ -278,7 +278,15 @@
                 <p class="nudge-text">{{ item.value.emoji || '🔔' }} nudge read</p>
               </template>
 
-              <p class="message-meta">
+              <template v-else-if="item.value.type === 'ChannelJoin'">
+                <p class="chat-join-text">{{ displayActor(item.actor) }} joined the chat</p>
+                <p class="chat-join-meta">{{ formatTime(item.value.published) }}</p>
+              </template>
+
+              <p
+                v-if="item.value.type !== 'ChannelJoin'"
+                class="message-meta"
+              >
                 {{ displayActor(item.actor) }} · {{ formatTime(item.value.published) }}
               </p>
             </div>

@@ -423,6 +423,33 @@ a.chat-row.chat-row--active .chat-title {
     justify-content: center;
 }
 
+.message-row.join {
+    justify-content: center;
+}
+
+.chat-join-bubble {
+    max-width: min(90%, 520px);
+    background: transparent;
+    border: none;
+    padding: 6px 12px 4px;
+    text-align: center;
+}
+
+.chat-join-text {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.chat-join-meta {
+    margin: 4px 0 0;
+    font-size: 0.72rem;
+    color: var(--muted);
+    opacity: 0.85;
+}
+
 .message-bubble {
     max-width: min(70%, 480px);
     border-radius: 22px;

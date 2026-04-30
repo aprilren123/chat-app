@@ -148,14 +148,22 @@ function createNudgeState() {
     true
   );
 
-  /** Latest activity in a channel for recency sorting (includes title so new rooms rank high). */
+  /** Latest activity in a channel for recency sorting (includes title + join pings so list resorts for everyone). */
   function getChannelLastActivityMs(objects, channel) {
     if (!channel || !objects?.length) return 0;
     let latest = 0;
     for (const o of objects) {
       if (!o?.channels?.includes(channel)) continue;
       const typ = o.value?.type;
-      if (typ !== 'Message' && typ !== 'Nudge' && typ !== 'NudgeRead' && typ !== 'ChatTitle') continue;
+      if (
+        typ !== 'Message' &&
+        typ !== 'Nudge' &&
+        typ !== 'NudgeRead' &&
+        typ !== 'ChatTitle' &&
+        typ !== 'ChannelJoin'
+      ) {
+        continue;
+      }
       const p = Number(o.value?.published) || 0;
       if (p > latest) latest = p;
     }
@@ -294,6 +302,7 @@ function createNudgeState() {
       touchConversationListOrder(chatChannel);
       newChatTitle.value = '';
       await loadChats();
+      await pollChannelObjects();
       await router.push('/chat/' + encodeURIComponent(chatChannel));
     } finally {
       isCreatingChat.value = false;
@@ -313,8 +322,20 @@ function createNudgeState() {
       ];
       joinedChats.value = next;
       saveJoinedChats();
-      touchConversationListOrder(channel);
       joinChatChannel.value = '';
+      await graffiti.post(
+        {
+          value: {
+            activity: 'Send',
+            type: 'ChannelJoin',
+            published: Date.now(),
+          },
+          channels: [channel],
+        },
+        session.value
+      );
+      await pollChannelObjects();
+      touchConversationListOrder(channel);
       await nextTick();
       await router.push('/chat/' + encodeURIComponent(channel));
     } finally {
@@ -342,6 +363,7 @@ function createNudgeState() {
 
       draftMessage.value = '';
       await postTypingSignal(channel, false);
+      await pollChannelObjects();
       touchConversationListOrder(channel);
     } finally {
       isSendingMessage.value = false;
@@ -598,11 +620,13 @@ function createNudgeState() {
       own: isOwnMessage(item),
       other: !isOwnMessage(item) && item.value?.type === 'Message',
       nudge: isNudgeEvent,
+      join: item.value?.type === 'ChannelJoin',
     };
   }
 
   function messageBubbleClass(item) {
     const isNudge = item.value?.type === 'Nudge' || item.value?.type === 'NudgeRead';
+    const isJoin = item.value?.type === 'ChannelJoin';
     const isFresh = isFreshNudge(item);
     const isDisappearing = isDisappearingNudge(item);
     return {
@@ -611,6 +635,7 @@ function createNudgeState() {
       'nudge-bubble': isNudge,
       'nudge-bubble--pop': isFresh,
       'nudge-bubble--pop-out': isDisappearing,
+      'chat-join-bubble': isJoin,
     };
   }
 
@@ -624,9 +649,26 @@ function createNudgeState() {
     return nudgeDisappearingObjectUrls.value.has(nudgeObjectKey(item));
   }
 
+  function formatActorFromGraffitiActor(actor) {
+    if (!actor) return 'Other person';
+    const s = String(actor);
+    const lower = s.toLowerCase();
+    let marker = '.graffiti.actor';
+    let idx = lower.indexOf(marker);
+    if (idx === -1) {
+      marker = '.grafitti.actor';
+      idx = lower.indexOf(marker);
+    }
+    if (idx !== -1) {
+      const label = s.slice(0, idx);
+      return label || 'Other person';
+    }
+    return 'Other person';
+  }
+
   function displayActor(actor) {
     if (actor === session.value?.actor) return 'You';
-    return 'Other person';
+    return formatActorFromGraffitiActor(actor);
   }
 
   function isOwnActor(actor) {
@@ -711,6 +753,7 @@ function useChatPageState() {
         if (!obj.channels?.includes(ch)) return false;
         if (obj.value?.type === 'Message') return true;
         if (obj.value?.type === 'NudgeRead') return true;
+        if (obj.value?.type === 'ChannelJoin') return true;
         if (obj.value?.type === 'Nudge') {
           const p = obj.value?.published ?? 0;
           return Date.now() - p <= NUDGE_VISIBLE_MS;
