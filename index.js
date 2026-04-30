@@ -147,7 +147,7 @@ function createNudgeState() {
         url: obj.url,
         actor: obj.actor,
       }))
-      .sort((a, b) => (a.published || 0) - (b.published || 0));
+      .sort((a, b) => (b.published || 0) - (a.published || 0));
 
     const titleByChannel = Object.create(null);
     for (const o of allChannelObjects.value || []) {
@@ -181,13 +181,23 @@ function createNudgeState() {
         actor: session.value?.actor,
       });
     }
-    return Array.from(byChannel.values()).sort((a, b) => (a.published || 0) - (b.published || 0));
+    return Array.from(byChannel.values()).sort((a, b) => (b.published || 0) - (a.published || 0));
   });
 
   const { objects: allChannelObjects, isFirstPoll: isLoadingMessages, poll: pollChannelObjects } =
     useGraffitiDiscover(
       () =>
-        session.value?.actor && chats.value.length ? chats.value.map(c => c.channel) : [],
+        session.value?.actor
+          ? [
+              ...new Set([
+                ...chatObjects.value
+                  .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
+                  .map(obj => obj.value?.channel)
+                  .filter(Boolean),
+                ...joinedChats.value.map(c => c.channel).filter(Boolean),
+              ]),
+            ]
+          : [],
       {},
       session,
       true
@@ -560,17 +570,7 @@ function createNudgeState() {
 
   function displayActor(actor) {
     if (actor === session.value?.actor) return 'You';
-    return formatActorHandle(actor);
-  }
-
-  function formatActorHandle(actor) {
-    if (!actor) return 'User';
-    const raw = String(actor).trim();
-    if (!raw) return 'User';
-    const parts = raw.split(/[/:]/).filter(Boolean);
-    const tail = parts[parts.length - 1] || raw;
-    if (tail.length <= 14) return tail;
-    return `${tail.slice(0, 6)}...${tail.slice(-4)}`;
+    return 'Other person';
   }
 
   function isOwnActor(actor) {
@@ -587,15 +587,9 @@ function createNudgeState() {
   const visibleChats = computed(() => {
     const list = chats.value;
     if (chatFilter.value === 'nudges') {
-      return list.filter(c =>
-        allChannelObjects.value.some(o => {
-          if (!o?.channels?.includes(c.channel)) return false;
-          if (o.value?.type !== 'Nudge') return false;
-          if (nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(o))) return false;
-          const p = o.value?.published ?? 0;
-          return Date.now() - p <= NUDGE_VISIBLE_MS;
-        })
-      );
+      // Same rule as sidebar/header "nudged" state: latest visible nudge in channel (any actor).
+      const map = latestVisibleNudgeMap.value;
+      return list.filter(c => Boolean(map[c.channel]));
     }
     return list;
   });
