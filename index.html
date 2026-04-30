@@ -78,7 +78,7 @@
               v-model.trim="newChatTitle"
               type="text"
               placeholder="Chat title"
-              @keyup.enter="createChat"
+              @keyup="if ($event.key === 'Enter') createChat()"
             />
             <button class="primary-button" type="button" @click="createChat" :disabled="isCreatingChat">
               {{ isCreatingChat ? 'Creating...' : 'Create' }}
@@ -302,7 +302,7 @@
             v-model.trim="draftMessage"
             type="text"
             placeholder="iMessage"
-            @keyup.enter="sendMessageForCurrentChat"
+            @keyup="if ($event.key === 'Enter') sendMessageForCurrentChat()"
           />
           <div class="composer-nudge-slot">
             <div
