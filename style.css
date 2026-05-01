@@ -34,9 +34,19 @@ input {
 .app-shell {
     min-height: 100vh;
     padding: 24px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+.app-shell > .app-frame {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: calc(100vh - 48px);
 }
 
 .login-screen {
+    flex: 1;
     min-height: calc(100vh - 48px);
     display: grid;
     place-items: center;
@@ -62,7 +72,8 @@ input {
     overflow: hidden;
     display: grid;
     grid-template-columns: 340px 1fr;
-    min-height: calc(100vh - 48px);
+    min-height: 0;
+    height: 100%;
     box-shadow: var(--shadow);
 }
 
@@ -116,6 +127,9 @@ input {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
     background: #ffffff;
 }
 
@@ -390,6 +404,17 @@ a.chat-row.chat-row--active .chat-title {
     margin-right: 6px;
 }
 
+.chat-nudge-status-hint {
+    display: block;
+    width: 100%;
+    margin-top: 2px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--muted);
+    line-height: 1.35;
+    text-align: right;
+}
+
 .chat-nudge-status-remaining {
     font-size: 0.82rem;
     font-weight: 500;
@@ -401,9 +426,12 @@ a.chat-row.chat-row--active .chat-title {
 }
 
 .messages-area {
-    flex: 1;
-    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 22px 24px;
+    -webkit-overflow-scrolling: touch;
     background:
         radial-gradient(circle at top, rgba(10, 132, 255, 0.04), transparent 26%),
         #ffffff;
@@ -684,6 +712,7 @@ a.chat-row.chat-row--active .chat-title {
     display: grid;
     grid-template-columns: 1fr auto auto;
     gap: 10px;
+    align-items: center;
     background: #fafafc;
 }
 
@@ -859,6 +888,40 @@ input:focus {
     border: 1px solid var(--nudge-border);
 }
 
+.ghost-icon-button.nudge-bell-button--incoming {
+    background: linear-gradient(145deg, #fff9e8 0%, #fff2cc 100%);
+    border: 1px solid var(--nudge-border);
+    box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.2);
+    animation: nudge-incoming-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes nudge-incoming-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.18);
+    }
+    50% {
+        box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.32);
+    }
+}
+
+.ghost-icon-button.nudge-bell-button--incoming:hover:not(:disabled) {
+    filter: brightness(0.98);
+    animation: none;
+}
+
+.chat-sidebar-nudge.nudge-sidebar-bell--incoming {
+    background: linear-gradient(145deg, #fff9e8 0%, #fff2cc 100%);
+    border-color: var(--nudge-border);
+    box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.2);
+    animation: nudge-incoming-pulse 2.2s ease-in-out infinite;
+}
+
+.chat-sidebar-nudge.nudge-sidebar-bell--incoming:hover:not(:disabled) {
+    filter: brightness(0.98);
+    animation: none;
+}
+
 .ghost-icon-button.nudge-bell-button--undo:hover {
     background: #fff3cf;
 }
@@ -928,11 +991,36 @@ a.ghost-button.sidebar-link-button {
 }
 
 .chat-route {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
     min-width: 0;
+    overflow: hidden;
+}
+
+.chat-header,
+.composer {
+    flex-shrink: 0;
+}
+
+.composer-nudge-hint {
+    grid-column: 1 / -1;
+    margin: -4px 0 0;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--muted);
+}
+
+.composer-nudge-hint kbd {
+    font-family: inherit;
+    font-size: 0.78em;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #f2f2f7;
+    color: var(--text);
 }
 
 .nudge-emoji-picker--inline {
@@ -995,8 +1083,11 @@ a.ghost-button.sidebar-link-button {
         padding: 12px;
     }
 
+    .app-shell > .app-frame {
+        max-height: calc(100vh - 24px);
+    }
+
     .app-frame {
-        min-height: calc(100vh - 24px);
         border-radius: 22px;
     }
 

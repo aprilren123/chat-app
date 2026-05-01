@@ -159,7 +159,8 @@
               <NudgeButton
                 variant="sidebar"
                 :emoji="nudgeEmojiForSidebarRow(chat)"
-                :is-undo="!!latestVisibleNudgeMap[chat.channel]"
+                :is-undo="!!latestVisibleNudgeMap[chat.channel] && !isNudgeBellLockedForMe(chat.channel)"
+                :incoming-dismiss="isNudgeBellLockedForMe(chat.channel)"
                 :is-pending="isChatNudgePending(chat.channel)"
                 :title="nudgeBellButtonTitle(chat.channel, chat.title)"
                 :aria-label="nudgeBellButtonAriaLabel(chat.channel, chat.title)"
@@ -239,6 +240,10 @@
                 }}</span>
                 Nudged
               </span>
+              <span
+                v-if="isNudgeBellLockedForMe(activeChat.channel)"
+                class="chat-nudge-status-hint"
+              >Tap the bell or “Nudge sent” to clear.</span>
               <span
                 v-if="nudgeBannerCountdown"
                 class="chat-nudge-status-remaining"
@@ -355,13 +360,15 @@
               <NudgeButton
                 variant="composer"
                 :emoji="composerNudgeButtonEmoji"
-                :is-undo="!!activeChatVisibleNudge"
+                :is-undo="!!activeChatVisibleNudge && !isNudgeBellLockedForMe(activeChat.channel)"
+                :incoming-dismiss="isNudgeBellLockedForMe(activeChat.channel)"
                 :is-pending="isChatNudgePending(activeChat.channel)"
                 :title="nudgeBellButtonTitle(activeChat.channel, activeChat.title)"
                 :aria-label="nudgeBellButtonAriaLabel(activeChat.channel, activeChat.title)"
                 @toggle="sendNudgeForCurrentChat"
               />
               <button
+                v-if="!isNudgeBellLockedForMe(activeChat.channel)"
                 type="button"
                 class="nudge-picker-chevron"
                 :disabled="isComposerEmojiChevronDisabled"
@@ -393,6 +400,14 @@
           >
             {{ isSendingMessage ? 'Sending...' : 'Send' }}
           </button>
+          <p
+            v-if="isNudgeBellLockedForMe(activeChat.channel)"
+            class="composer-nudge-hint"
+            role="note"
+          >
+            <strong>New nudge</strong> — tap the highlighted bell or the
+            <kbd>Nudge sent</kbd> line in the thread to clear it. The emoji menu returns after that.
+          </p>
         </footer>
       </template>
     </div>

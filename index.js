@@ -1,4 +1,15 @@
-import { createApp, ref, computed, watch, nextTick, onMounted, onUnmounted, provide, inject } from 'vue';
+import {
+  createApp,
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  provide,
+  inject,
+  unref,
+} from 'vue';
 import { createRouter, createWebHashHistory, useRoute, useRouter } from 'vue-router';
 import { GraffitiDecentralized } from '@graffiti-garden/implementation-decentralized';
 import {
@@ -618,8 +629,7 @@ function createNudgeState() {
   function nudgeBellButtonTitle(channel, chatTitle) {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Please wait…';
-    if (isNudgeBellLockedForMe(channel))
-      return 'Someone nudged — tap the bell or their “Nudge sent” line in the chat to mark it read';
+    if (isNudgeBellLockedForMe(channel)) return 'Tap to dismiss their nudge';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Nudge ${chatTitle || 'chat'}`;
   }
@@ -628,7 +638,7 @@ function createNudgeState() {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Nudge action in progress';
     if (isNudgeBellLockedForMe(channel))
-      return 'Someone nudged this chat. Tap this button or their nudge in the thread to mark it read.';
+      return 'Dismiss their nudge: tap this bell or the Nudge sent line in the thread.';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Send a nudge for ${chatTitle || 'this chat'}`;
   }
@@ -880,7 +890,15 @@ function createNudgeState() {
 
   function scrollMessagesToBottom() {
     const box = document.querySelector('.messages-area');
-    if (box) box.scrollTop = box.scrollHeight;
+    if (!box) return;
+    const run = () => {
+      box.scrollTop = box.scrollHeight;
+    };
+    run();
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(run);
+    });
   }
 
   const chatFilter = ref(/** @type {'all' | 'nudges'} */ ('all'));
@@ -1072,6 +1090,9 @@ function useChatPageState() {
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', pollMessagesIfTabVisible);
     }
+    void nextTick(() => {
+      requestAnimationFrame(() => s.scrollMessagesToBottom());
+    });
   });
   onUnmounted(() => {
     if (nudgeBannerTimer) clearInterval(nudgeBannerTimer);
@@ -1096,6 +1117,15 @@ function useChatPageState() {
       showNudgeEmojiPicker.value = false;
       await nextTick();
       s.scrollMessagesToBottom();
+    }
+  );
+  watch(
+    () => unref(s.isLoadingMessages),
+    async (loading, wasLoading) => {
+      if (wasLoading === true && loading === false) {
+        await nextTick();
+        s.scrollMessagesToBottom();
+      }
     }
   );
   watch(
@@ -1248,6 +1278,8 @@ const NudgeButton = {
     },
     emoji: { type: String, required: true },
     isUndo: { type: Boolean, default: false },
+    /** Someone else’s nudge is active — bell dismisses it (distinct look from undo). */
+    incomingDismiss: { type: Boolean, default: false },
     isPending: { type: Boolean, default: false },
     /** Reserved; bell is enabled and marks read when someone else’s nudge is active. */
     interactionLocked: { type: Boolean, default: false },
@@ -1264,12 +1296,14 @@ const NudgeButton = {
         return {
           'ghost-icon-button': true,
           'chat-composer-nudge': true,
-          'nudge-bell-button--undo': this.isUndo,
+          'nudge-bell-button--undo': this.isUndo && !this.incomingDismiss,
+          'nudge-bell-button--incoming': this.incomingDismiss,
         };
       }
       return {
         'chat-sidebar-nudge': true,
-        'chat-sidebar-nudge--undo': this.isUndo,
+        'chat-sidebar-nudge--undo': this.isUndo && !this.incomingDismiss,
+        'nudge-sidebar-bell--incoming': this.incomingDismiss,
       };
     },
   },
