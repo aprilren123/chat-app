@@ -265,7 +265,7 @@
             class="message-row"
             :class="messageRowClass(item)"
           >
-            <div class="message-bubble" :class="messageBubbleClass(item)">
+            <div class="message-bubble" :class="messageBubbleClass(item, { resolvedNudgeUrls })">
               <template v-if="item.value.type === 'Message'">
                 <p class="message-text">{{ item.value.content }}</p>
               </template>
@@ -275,7 +275,7 @@
               </template>
 
               <template v-else-if="item.value.type === 'NudgeRead'">
-                <p class="nudge-text">{{ item.value.emoji || '🔔' }} nudge read</p>
+                <p class="nudge-text">{{ item.value.emoji || '🔔' }} Nudge read</p>
               </template>
 
               <template v-else-if="item.value.type === 'ChannelJoin'">

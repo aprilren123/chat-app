@@ -65,6 +65,43 @@ function nudgeObjectKey(obj) {
   return `${obj.url}|${obj.actor || ''}|${obj.value?.published || 0}`;
 }
 
+/** Nudge URLs cleared by a later `NudgeRead` (same emoji, reader ≠ nudge actor). */
+function buildResolvedNudgeUrlSet(objects, channel) {
+  const resolved = new Set();
+  if (!channel || !objects?.length) return resolved;
+  const events = objects
+    .filter(
+      o =>
+        o?.channels?.includes(channel) &&
+        (o.value?.type === 'Nudge' || o.value?.type === 'NudgeRead')
+    )
+    .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
+
+  for (const item of events) {
+    if (item.value?.type !== 'NudgeRead') continue;
+    const pr = item.value?.published ?? 0;
+    const readActor = canonicalActorId(item.actor);
+    let best = null;
+    let bestPub = -1;
+    for (const o of events) {
+      if (o.value?.type !== 'Nudge') continue;
+      const pub = o.value?.published ?? 0;
+      if (pub >= pr) continue;
+      if (canonicalActorId(o.actor) === readActor) continue;
+      if (pub > bestPub) {
+        bestPub = pub;
+        best = o;
+      }
+    }
+    if (best?.url) {
+      const er = item.value?.emoji || '🔔';
+      const en = best.value?.emoji || '🔔';
+      if (er === en) resolved.add(best.url);
+    }
+  }
+  return resolved;
+}
+
 function normalizeChannelInput(raw) {
   if (!raw) return '';
   const t = raw.trim();
@@ -540,14 +577,25 @@ function createNudgeState() {
   });
 
   const latestVisibleNudgeMap = computed(() => {
-    const objects = allChannelObjects.value;
+    const objects = allChannelObjects.value || [];
+    const channelSet = new Set(chats.value.map(c => c.channel).filter(Boolean));
+    for (const o of objects) {
+      for (const ch of o.channels || []) {
+        if (ch) channelSet.add(ch);
+      }
+    }
     const map = Object.create(null);
-    for (const chat of chats.value) {
-      const n = getLatestVisibleNudge(objects, chat.channel);
-      if (n) map[chat.channel] = n;
+    for (const ch of channelSet) {
+      const n = getLatestVisibleNudge(objects, ch);
+      if (n) map[ch] = n;
     }
     return map;
   });
+
+  function peekLatestVisibleNudge(channel) {
+    if (!channel) return null;
+    return getLatestVisibleNudge(allChannelObjects.value, channel);
+  }
 
   function ownLatestNudgeForChannel(channel) {
     if (!channel) return null;
@@ -555,8 +603,7 @@ function createNudgeState() {
   }
 
   function latestVisibleNudgeForChannel(channel) {
-    if (!channel) return null;
-    return latestVisibleNudgeMap.value[channel] ?? null;
+    return peekLatestVisibleNudge(channel);
   }
 
   const nudgePendingChannels = ref(new Set());
@@ -696,7 +743,11 @@ function createNudgeState() {
     };
   }
 
-  function messageBubbleClass(item) {
+  function messageBubbleClass(item, opts) {
+    const resolvedSet = opts?.resolvedNudgeUrls;
+    const isResolvedRead = item.value?.type === 'NudgeRead';
+    const isResolvedNudge =
+      item.value?.type === 'Nudge' && resolvedSet instanceof Set && resolvedSet.has(item.url);
     const isNudge = item.value?.type === 'Nudge' || item.value?.type === 'NudgeRead';
     const isJoin = item.value?.type === 'ChannelJoin';
     const isFresh = isFreshNudge(item);
@@ -705,7 +756,8 @@ function createNudgeState() {
       'own-bubble': isOwnMessage(item),
       'other-bubble': !isOwnMessage(item) && item.value?.type === 'Message',
       'nudge-bubble': isNudge,
-      'nudge-bubble--pop': isFresh,
+      'nudge-bubble--resolved': isResolvedRead || isResolvedNudge,
+      'nudge-bubble--pop': isFresh && !isResolvedNudge,
       'nudge-bubble--pop-out': isDisappearing,
       'chat-join-bubble': isJoin,
     };
@@ -790,6 +842,7 @@ function createNudgeState() {
     sendNudgeToChat,
     ownLatestNudgeForChannel,
     latestVisibleNudgeForChannel,
+    peekLatestVisibleNudge,
     isChatNudgePending,
     formatTime,
     messageRowClass,
@@ -822,6 +875,12 @@ function useChatPageState() {
     return s.chats.value.find(c => c.channel === id) || null;
   });
 
+  const nowTick = ref(Date.now());
+
+  const resolvedNudgeUrls = computed(() =>
+    buildResolvedNudgeUrlSet(s.allChannelObjects.value, activeChat.value?.channel || '')
+  );
+
   const chatItems = computed(() => {
     if (!activeChat.value) return [];
     const ch = activeChat.value.channel;
@@ -842,9 +901,10 @@ function useChatPageState() {
   });
 
   const activeChatVisibleNudge = computed(() => {
+    void nowTick.value;
     const ch = activeChat.value?.channel;
     if (!ch) return null;
-    return s.latestVisibleNudgeMap.value[ch] ?? null;
+    return s.peekLatestVisibleNudge(ch);
   });
 
   const activeChatLatestNudge = computed(() => {
@@ -890,7 +950,6 @@ function useChatPageState() {
     return false;
   });
 
-  const nowTick = ref(Date.now());
   const nudgeBannerCountdown = computed(() => {
     const nudge = activeChatVisibleNudge.value;
     if (!nudge?.value?.published) return null;
@@ -944,6 +1003,16 @@ function useChatPageState() {
       s.scrollMessagesToBottom();
     }
   );
+  watch(
+    () => {
+      void nowTick.value;
+      const ch = activeChat.value?.channel;
+      return ch ? s.peekLatestVisibleNudge(ch) : null;
+    },
+    nudge => {
+      if (nudge) showNudgeEmojiPicker.value = false;
+    }
+  );
   watch(showTypingIndicator, async () => {
     await nextTick();
     s.scrollMessagesToBottom();
@@ -960,6 +1029,9 @@ function useChatPageState() {
   );
 
   function openComposerNudgeEmojiPicker() {
+    void nowTick.value;
+    const ch = activeChat.value?.channel;
+    if (ch && s.peekLatestVisibleNudge(ch)) return;
     showNudgeEmojiPicker.value = true;
   }
   function closeComposerNudgeEmojiPicker() {
@@ -975,6 +1047,7 @@ function useChatPageState() {
   return {
     activeChat,
     chatItems,
+    resolvedNudgeUrls,
     activeChatVisibleNudge,
     activeChatLatestNudge,
     composerNudgeButtonEmoji,
