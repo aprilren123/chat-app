@@ -76,18 +76,9 @@ function normalizeChannelInput(raw) {
   }
 }
 
-/** Normalize actor id for comparisons and handle-cache keys (trim, strip fragment/query). */
 function canonicalActorId(actor) {
   if (actor == null || actor === '') return '';
-  return String(actor).trim().split('#')[0].split('?')[0];
-}
-
-/** Resolve `actorToHandle` from the synchronize wrapper or the underlying Graffiti instance. */
-function getActorToHandleFn(g) {
-  if (typeof g?.actorToHandle === 'function') return g.actorToHandle.bind(g);
-  const raw = g?.graffiti;
-  if (typeof raw?.actorToHandle === 'function') return raw.actorToHandle.bind(raw);
-  return null;
+  return String(actor).trim().split(/[?#]/, 1)[0];
 }
 
 function useNudgeStore() {
@@ -110,7 +101,6 @@ function createNudgeState() {
   const listResortNonce = ref(0);
   /** Local “last interacted” time per channel (create / join / send / nudge) */
   const channelListOrderTouch = ref(/** @type {Record<string, number>} */ ({}));
-  /** Graffiti `actorToHandle` results for display (see Graffiti API identity methods) */
   const actorHandleCache = ref(/** @type {Record<string, string>} */ ({}));
 
   function touchConversationListOrder(channel) {
@@ -311,30 +301,21 @@ function createNudgeState() {
   watch(
     [allChannelObjects, chatObjects, () => session.value?.actor],
     async () => {
-      const me = session.value?.actor;
-      const resolveHandle = getActorToHandleFn(graffiti);
-      if (!me || !resolveHandle) return;
-
+      if (!session.value?.actor || typeof graffiti.actorToHandle !== 'function') return;
       const actors = new Set();
-      for (const o of allChannelObjects.value || []) {
-        const k = canonicalActorId(o?.actor);
-        if (k) actors.add(k);
+      for (const list of [allChannelObjects.value || [], chatObjects.value || []]) {
+        for (const o of list) {
+          const k = canonicalActorId(o?.actor);
+          if (k) actors.add(k);
+        }
       }
-      for (const o of chatObjects.value || []) {
-        const k = canonicalActorId(o?.actor);
-        if (k) actors.add(k);
-      }
-
       for (const actor of actors) {
         if (actorHandleCache.value[actor]) continue;
         try {
-          const handle = await resolveHandle(actor);
-          const label = typeof handle === 'string' ? handle.trim() : '';
-          if (label) {
-            actorHandleCache.value = { ...actorHandleCache.value, [actor]: label };
-          }
+          const label = (await graffiti.actorToHandle(actor)).trim();
+          if (label) actorHandleCache.value = { ...actorHandleCache.value, [actor]: label };
         } catch {
-          /* displayActor / displayJoinName fall back to formatActorFromGraffitiActor */
+          /* formatActorFromGraffitiActor */
         }
       }
     },
@@ -662,8 +643,25 @@ function createNudgeState() {
     if (!session.value || !channel || !emoji) return;
     if (nudgePendingChannels.value.has(channel)) return;
 
+    const actor = session.value.actor;
+    const own = getOwnVisibleNudge(allChannelObjects.value, channel, actor);
+    if (own && (own.value?.emoji || '🔔') === emoji) return;
+
     nudgePendingChannels.value = new Set(nudgePendingChannels.value).add(channel);
     try {
+      if (own) {
+        const key = nudgeObjectKey(own);
+        nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(key);
+        await nextTick();
+        try {
+          await graffiti.delete(own.url, session.value);
+        } catch (err) {
+          const nextT = new Set(nudgeTombstonedObjectUrls.value);
+          nextT.delete(key);
+          nudgeTombstonedObjectUrls.value = nextT;
+          throw err;
+        }
+      }
       await graffiti.post(
         {
           value: {
@@ -741,61 +739,30 @@ function createNudgeState() {
   }
 
   function formatActorFromGraffitiActor(actor) {
-    if (!actor) return 'Someone';
-    const raw = String(actor).trim();
-    const s = canonicalActorId(raw);
-
-    if (s.startsWith('did:web:')) {
-      let host = s.slice('did:web:'.length).replace(/:\d+$/, '');
-      host = host.split('/')[0] || host;
-      if (host) return host.replace(/^www\./i, '') || 'Someone';
-    }
-    if (s.startsWith('did:plc:')) {
-      return s.length > 28 ? `${s.slice(0, 24)}…` : s;
-    }
-    if (s.startsWith('did:')) {
-      return s.length > 32 ? `${s.slice(0, 28)}…` : s;
-    }
-
-    // Graffiti actors are usually "...username.graffiti.actor" (case-insensitive)
-    const m = s.match(/(.*?)(\.graffiti\.actor|\.grafitti\.actor)/i);
+    const s = canonicalActorId(actor);
+    if (!s) return 'Someone';
+    const m = s.match(/([^/?#]+?)(\.graffiti\.actor|\.grafitti\.actor)/i);
     if (m) {
-      let label = (m[1] || '').trim();
-      // Prefer the last path segment when the prefix looks like a URL or path
-      if (label.includes('/')) {
-        const parts = label.split('/').filter(Boolean);
-        const last = parts[parts.length - 1];
-        if (last) label = last;
-      }
-      label = label.replace(/^@+/, '').replace(/\.+$/, '').trim();
+      const part = m[1].split('/').pop() || m[1];
+      const label = part.replace(/^@+/, '').replace(/\.+$/, '').trim();
       if (label) return label;
     }
-
-    // No graffiti suffix: show last URL segment or a short handle
     if (s.includes('/')) {
-      const parts = s.split('/').filter(Boolean);
-      const last = parts[parts.length - 1];
-      if (last) return last.replace(/^@+/, '').slice(0, 48) || 'Someone';
+      const last = s.split('/').filter(Boolean).pop() || '';
+      const label = last.replace(/^@+/, '').slice(0, 48);
+      if (label) return label;
     }
-    if (s.length && s.length <= 48) return s;
-    return s ? `${s.slice(0, 12)}…` : 'Someone';
+    return s.length <= 48 ? s : `${s.slice(0, 12)}…`;
   }
 
   function displayActor(actor) {
-    const me = session.value?.actor;
-    if (canonicalActorId(me) && canonicalActorId(actor) === canonicalActorId(me)) return 'You';
     const key = canonicalActorId(actor);
-    const handle = key ? actorHandleCache.value[key] : '';
-    if (handle) return handle;
-    return formatActorFromGraffitiActor(actor);
+    if (key && key === canonicalActorId(session.value?.actor)) return 'You';
+    return actorHandleCache.value[key] || formatActorFromGraffitiActor(actor);
   }
 
-  /** Graffiti handle (or DID fallback) for system lines like ChannelJoin — never the generic "You". */
   function displayJoinName(actor) {
-    const key = canonicalActorId(actor);
-    const handle = key ? actorHandleCache.value[key] : '';
-    if (handle) return handle;
-    return formatActorFromGraffitiActor(actor);
+    return actorHandleCache.value[canonicalActorId(actor)] || formatActorFromGraffitiActor(actor);
   }
 
   function isOwnActor(actor) {

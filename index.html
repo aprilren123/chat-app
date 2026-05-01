@@ -327,7 +327,7 @@
               v-if="showNudgeEmojiPicker"
               class="nudge-emoji-picker"
               role="listbox"
-              aria-label="One-time nudge emoji"
+              aria-label="Nudge emoji"
               @click.stop
             >
               <button
@@ -335,7 +335,7 @@
                 :key="e"
                 type="button"
                 class="nudge-emoji-option"
-                :title="'Send a nudge with ' + e + ' (this time only)'"
+                :title="(activeChat && ownVisibleNudgeMap[activeChat.channel]) ? ('Change nudge to ' + e) : ('Send nudge with ' + e)"
                 @click="pickOneOffNudgeEmoji(e)"
               >
                 {{ e }}
@@ -355,8 +355,8 @@
                 type="button"
                 class="nudge-picker-chevron"
                 :disabled="isChatNudgePending(activeChat.channel)"
-                title="Choose a different emoji for this nudge only"
-                aria-label="Choose a different emoji for this nudge only. Does not change the default in Settings"
+                title="Pick emoji for this nudge (changes current nudge if you already sent one)"
+                aria-label="Pick nudge emoji. If you already nudged, choosing another replaces it; does not change Settings default"
                 @click.stop="openComposerNudgeEmojiPicker"
               >
                 ▾
