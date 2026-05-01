@@ -754,6 +754,7 @@ a.chat-row.chat-row--active .chat-title {
 .nudge-picker-chevron:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+    pointer-events: none;
 }
 
 .nudge-picker-chevron:disabled:hover {

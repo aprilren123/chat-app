@@ -354,9 +354,21 @@
               <button
                 type="button"
                 class="nudge-picker-chevron"
-                :disabled="isChatNudgePending(activeChat.channel) || !!activeChatVisibleNudge"
-                :title="activeChatVisibleNudge ? 'Clear the nudge first to pick a different emoji' : 'Choose a different emoji for this nudge only'"
-                :aria-label="activeChatVisibleNudge ? 'Emoji list disabled while this chat has an active nudge' : 'Choose a different emoji for this nudge only. Does not change the default in Settings'"
+                :disabled="isComposerEmojiChevronDisabled"
+                :title="
+                  isComposerEmojiChevronDisabled
+                    ? isChatNudgePending(activeChat.channel)
+                      ? 'Wait for the nudge action to finish'
+                      : 'Clear the active nudge to choose a different emoji'
+                    : 'Choose a different emoji for this nudge only'
+                "
+                :aria-label="
+                  isComposerEmojiChevronDisabled
+                    ? isChatNudgePending(activeChat.channel)
+                      ? 'Emoji list unavailable while a nudge action is in progress'
+                      : 'Emoji list unavailable while this chat has an active nudge'
+                    : 'Choose a different emoji for this nudge only. Does not change the default in Settings'
+                "
                 @click.stop="openComposerNudgeEmojiPicker"
               >
                 ▾

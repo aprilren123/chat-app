@@ -511,11 +511,13 @@ function createNudgeState() {
   function getOwnLatestNudge(objects, channel, actor) {
     if (!actor || !channel) return null;
     const hidden = nudgeTombstonedObjectUrls.value;
+    const resolvedUrls = buildResolvedNudgeUrlSet(objects, channel);
     const mine = objects.filter(
       o =>
         o &&
         o.url &&
         !hidden.has(nudgeObjectKey(o)) &&
+        !resolvedUrls.has(o.url) &&
         o.channels?.includes(channel) &&
         o.value?.type === 'Nudge' &&
         canonicalActorId(o.actor) === canonicalActorId(actor)
@@ -536,11 +538,13 @@ function createNudgeState() {
   function getLatestVisibleNudge(objects, channel) {
     if (!channel) return null;
     const hidden = nudgeTombstonedObjectUrls.value;
+    const resolvedUrls = buildResolvedNudgeUrlSet(objects, channel);
     const list = objects.filter(
       o =>
         o &&
         o.url &&
         !hidden.has(nudgeObjectKey(o)) &&
+        !resolvedUrls.has(o.url) &&
         o.channels?.includes(channel) &&
         o.value?.type === 'Nudge'
     );
@@ -920,6 +924,16 @@ function useChatPageState() {
     }
     return s.defaultNudgeEmoji.value;
   });
+
+  /** Same rules as `openComposerNudgeEmojiPicker` — must stay in sync so the chevron is disabled, not a no-op. */
+  const isComposerEmojiChevronDisabled = computed(() => {
+    void nowTick.value;
+    const ch = activeChat.value?.channel;
+    if (!ch) return true;
+    if (s.isChatNudgePending(ch)) return true;
+    return !!s.peekLatestVisibleNudge(ch);
+  });
+
   const showTypingIndicator = computed(() => {
     return !!activeChat.value && !!s.draftMessage.value;
   });
@@ -1051,6 +1065,7 @@ function useChatPageState() {
     activeChatVisibleNudge,
     activeChatLatestNudge,
     composerNudgeButtonEmoji,
+    isComposerEmojiChevronDisabled,
     showTypingIndicator,
     showOwnTypingIndicator,
     showOtherTypingIndicator,
