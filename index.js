@@ -30,15 +30,10 @@ function joinedChatsStorageKey(actor) {
 }
 
 const NUDGE_EMOJI_STORAGE_KEY = 'nudge-default-emoji';
-/** Nudges older than this are hidden in the thread */
 const NUDGE_VISIBLE_MS = 24 * 60 * 60 * 1000;
-/** Newly posted nudges get a one-time pop animation */
 const NUDGE_POP_ANIMATION_MS = 1800;
-/** Undoing a nudge plays a short pop-out animation */
 const NUDGE_POP_OUT_ANIMATION_MS = 260;
-/** Banner countdown turns red when this much time or less remains */
 const NUDGE_BANNER_URGENT_MS = 60 * 60 * 1000;
-/** Typing indicator signal timing */
 const TYPING_SIGNAL_TTL_MS = 3500;
 const TYPING_SIGNAL_THROTTLE_MS = 1200;
 
@@ -76,7 +71,6 @@ function nudgeObjectKey(obj) {
   return `${obj.url}|${obj.actor || ''}|${obj.value?.published || 0}`;
 }
 
-/** Nudge URLs cleared by a later `NudgeRead` (reader ≠ nudge actor; latest other’s nudge before that read). */
 function buildResolvedNudgeUrlSet(objects, channel) {
   const resolved = new Set();
   if (!channel || !objects?.length) return resolved;
@@ -120,12 +114,14 @@ function normalizeChannelInput(raw) {
   }
 }
 
-/** Chat text body — `type` may be bare `Message` or an expanded vocab URL from Graffiti. */
 function isMessagePayload(value) {
   const t = value?.type;
-  if (t === 'Message') return true;
+  if (t == null) return false;
   if (typeof t !== 'string') return false;
-  return t.endsWith('/Message') || t.endsWith('#Message');
+  const s = t.trim();
+  if (s === 'Message' || s.toLowerCase() === 'message') return true;
+  const seg = s.split(/[/:#]/).filter(Boolean).pop() || '';
+  return seg === 'Message' || seg.toLowerCase() === 'message';
 }
 
 function canonicalActorId(actor) {
@@ -149,9 +145,7 @@ function createNudgeState() {
   const defaultNudgeEmoji = ref(loadSavedNudgeEmoji());
   const joinedChats = ref([]);
   const isJoiningChat = ref(false);
-  /** Bumps when channel objects change so chat list resort tracks remote activity */
   const listResortNonce = ref(0);
-  /** Local “last interacted” time per channel (create / join / send / nudge) */
   const channelListOrderTouch = ref(/** @type {Record<string, number>} */ ({}));
   const actorHandleCache = ref(/** @type {Record<string, string>} */ ({}));
 
@@ -207,7 +201,6 @@ function createNudgeState() {
     true
   );
 
-  /** Latest activity in a channel for recency sorting (includes title + join pings so list resorts for everyone). */
   function getChannelLastActivityMs(objects, channel) {
     if (!channel || !objects?.length) return 0;
     let latest = 0;
@@ -313,7 +306,6 @@ function createNudgeState() {
       true
     );
 
-  /** Channel ids we discover (owned + joined); used to poll so everyone sees e.g. ChannelJoin soon. */
   const discoverChannelIdsKey = computed(() => {
     if (!session.value?.actor) return '';
     const ids = new Set([
@@ -621,10 +613,6 @@ function createNudgeState() {
     return ownLatestNudgeMap.value[channel] ?? null;
   }
 
-  function latestVisibleNudgeForChannel(channel) {
-    return peekLatestVisibleNudge(channel);
-  }
-
   const nudgePendingChannels = ref(new Set());
 
   function isNudgeBellLockedForMe(channel) {
@@ -840,8 +828,6 @@ function createNudgeState() {
     return {
       'own-bubble': isOwnMessage(item),
       'other-bubble': !isOwnMessage(item) && isMessagePayload(item.value),
-      /** Tight inset for every text message; not only when own/other actor matching works. */
-      'message-bubble--text': isMessagePayload(item.value),
       'nudge-bubble': isNudge,
       'nudge-bubble--resolved': isResolvedRead || isResolvedNudge,
       'nudge-bubble--tap-to-read': tapToRead,
@@ -892,7 +878,6 @@ function createNudgeState() {
     return canonicalActorId(actor) === canonicalActorId(session.value?.actor);
   }
 
-  /** True when this `Nudge` object is the current “someone else nudged” target (tap nudge button or message to dismiss). */
   function isOthersNudgeTapToDismiss(item, channel) {
     if (!channel || !item || item.value?.type !== 'Nudge') return false;
     if (isOwnActor(item.actor)) return false;
@@ -935,7 +920,6 @@ function createNudgeState() {
 
     const channelKey = c => String(c?.channel ?? '').trim();
 
-    /** Same “active nudge” rule as the thread and sidebar (`getLatestVisibleNudge`). */
     function activeNudgeForChat(c) {
       const ch = channelKey(c);
       if (!ch) return null;
@@ -988,7 +972,6 @@ function createNudgeState() {
     sendMessageToChannel,
     sendNudgeToChat,
     ownLatestNudgeForChannel,
-    latestVisibleNudgeForChannel,
     peekLatestVisibleNudge,
     isNudgeBellLockedForMe,
     nudgeBellButtonTitle,
@@ -1080,7 +1063,6 @@ function useChatPageState() {
     return s.defaultNudgeEmoji.value;
   });
 
-  /** Same rules as `openComposerNudgeEmojiPicker` — must stay in sync so the chevron is disabled, not a no-op. */
   const isComposerEmojiChevronDisabled = computed(() => {
     void nowTick.value;
     const ch = activeChat.value?.channel;
@@ -1159,7 +1141,6 @@ function useChatPageState() {
 
   const showNudgeEmojiPicker = ref(false);
 
-  /** Shallow fingerprint only — deep watch on long threads thrashed scroll and froze the UI. */
   watch(
     () => {
       const items = chatItems.value;
@@ -1255,9 +1236,6 @@ function useChatPageState() {
     onMessageBubbleClick,
     isFreshNudge: s.isFreshNudge,
     isDisappearingNudge: s.isDisappearingNudge,
-    /** Explicit for chat template (spread from inject can omit in some edge cases). */
-    isOthersNudgeTapToDismiss: s.isOthersNudgeTapToDismiss,
-    isNudgeBellLockedForMe: s.isNudgeBellLockedForMe,
   };
 }
 
@@ -1278,7 +1256,7 @@ const MainLayout = {
 
     function nudgeEmojiForSidebarRow(chat) {
       if (!chat?.channel) return s.defaultNudgeEmoji.value;
-      const n = s.latestVisibleNudgeForChannel(chat.channel);
+      const n = s.peekLatestVisibleNudge(chat.channel);
       if (n?.value?.type === 'Nudge') {
         return n.value.emoji || '🔔';
       }
@@ -1287,8 +1265,6 @@ const MainLayout = {
 
     return {
       ...s,
-      /** Sidebar / list rows may bind to this (e.g. interaction state). */
-      isNudgeBellLockedForMe: s.isNudgeBellLockedForMe,
       onChatRowClick,
       nudgeEmojiForSidebarRow,
     };
@@ -1307,8 +1283,6 @@ const ChatPage = {
     return {
       ...s,
       ...c,
-      isOthersNudgeTapToDismiss: s.isOthersNudgeTapToDismiss,
-      isNudgeBellLockedForMe: s.isNudgeBellLockedForMe,
       async sendMessageForCurrentChat() {
         if (!c.activeChat.value) return;
         await s.sendMessageToChannel(c.activeChat.value.channel);
@@ -1340,10 +1314,8 @@ const NudgeButton = {
     },
     emoji: { type: String, required: true },
     isUndo: { type: Boolean, default: false },
-    /** Someone else’s nudge is active — bell dismisses it (distinct look from undo). */
     incomingDismiss: { type: Boolean, default: false },
     isPending: { type: Boolean, default: false },
-    /** Reserved; bell is enabled and marks read when someone else’s nudge is active. */
     interactionLocked: { type: Boolean, default: false },
     title: { type: String, default: '' },
     ariaLabel: { type: String, default: '' },
