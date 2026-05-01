@@ -830,6 +830,8 @@ function createNudgeState() {
     return {
       'own-bubble': isOwnMessage(item),
       'other-bubble': !isOwnMessage(item) && item.value?.type === 'Message',
+      /** Every text payload — use with `.messages-area` CSS so inset is consistent in all chats. */
+      'message-bubble--text': item.value?.type === 'Message',
       'nudge-bubble': isNudge,
       'nudge-bubble--resolved': isResolvedRead || isResolvedNudge,
       'nudge-bubble--tap-to-read': tapToRead,
