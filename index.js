@@ -608,51 +608,98 @@ function createNudgeState() {
 
   const nudgePendingChannels = ref(new Set());
 
+  function isNudgeBellLockedForMe(channel) {
+    if (!session.value?.actor || !channel) return false;
+    const n = getLatestVisibleNudge(allChannelObjects.value, channel);
+    if (!n) return false;
+    return canonicalActorId(n.actor) !== canonicalActorId(session.value.actor);
+  }
+
+  function nudgeBellButtonTitle(channel, chatTitle) {
+    if (!channel) return 'Send nudge';
+    if (isChatNudgePending(channel)) return 'Please wait…';
+    if (isNudgeBellLockedForMe(channel)) return 'Someone nudged — tap their nudge in the chat to dismiss it';
+    if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
+    return `Nudge ${chatTitle || 'chat'}`;
+  }
+
+  function nudgeBellButtonAriaLabel(channel, chatTitle) {
+    if (!channel) return 'Send nudge';
+    if (isChatNudgePending(channel)) return 'Nudge action in progress';
+    if (isNudgeBellLockedForMe(channel))
+      return 'Someone nudged this chat. Open the conversation and tap their nudge in the thread to mark it read.';
+    if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
+    return `Send a nudge for ${chatTitle || 'this chat'}`;
+  }
+
+  async function readOthersVisibleNudge(channel, item) {
+    if (!session.value || !channel) return;
+    if (!item || item.value?.type !== 'Nudge') return;
+    if (nudgePendingChannels.value.has(channel)) return;
+    const latest = getLatestVisibleNudge(allChannelObjects.value, channel);
+    if (!latest || latest.url !== item.url) return;
+    if (canonicalActorId(latest.actor) === canonicalActorId(session.value.actor)) return;
+    if (buildResolvedNudgeUrlSet(allChannelObjects.value, channel).has(item.url)) return;
+
+    nudgePendingChannels.value = new Set(nudgePendingChannels.value).add(channel);
+    try {
+      await graffiti.post(
+        {
+          value: {
+            activity: 'Send',
+            type: 'NudgeRead',
+            emoji: latest.value?.emoji || '🔔',
+            published: Date.now(),
+          },
+          channels: [channel],
+        },
+        session.value
+      );
+      await pollChannelObjects();
+      await new Promise(r => setTimeout(r, 450));
+      await pollChannelObjects();
+      await nextTick();
+      await new Promise(r => {
+        requestAnimationFrame(() => requestAnimationFrame(r));
+      });
+      touchConversationListOrder(channel);
+    } finally {
+      const done = new Set(nudgePendingChannels.value);
+      done.delete(channel);
+      nudgePendingChannels.value = done;
+    }
+  }
+
   async function toggleNudgeForChannel(channel) {
     if (!session.value || !channel) return;
     if (nudgePendingChannels.value.has(channel)) return;
 
     const latest = getLatestVisibleNudge(allChannelObjects.value, channel);
+    if (latest && canonicalActorId(latest.actor) !== canonicalActorId(session.value.actor)) {
+      return;
+    }
 
     nudgePendingChannels.value = new Set(nudgePendingChannels.value).add(channel);
 
     try {
       if (latest) {
         const latestKey = nudgeObjectKey(latest);
-        const isOwn = canonicalActorId(latest.actor) === canonicalActorId(session.value.actor);
-
         nudgeDisappearingObjectUrls.value = new Set(nudgeDisappearingObjectUrls.value).add(latestKey);
         await nextTick();
         await new Promise(r => setTimeout(r, NUDGE_POP_OUT_ANIMATION_MS));
 
-        if (isOwn) {
-          nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(latestKey);
-          await nextTick();
-          try {
-            await graffiti.delete(latest.url, session.value);
-          } catch (err) {
-            const nextT = new Set(nudgeTombstonedObjectUrls.value);
-            nextT.delete(latestKey);
-            nudgeTombstonedObjectUrls.value = nextT;
-            const nextD = new Set(nudgeDisappearingObjectUrls.value);
-            nextD.delete(latestKey);
-            nudgeDisappearingObjectUrls.value = nextD;
-            throw err;
-          }
-        } else {
-          // No tombstone/delete here — the other user's "Nudge sent" stays in history; grey styling is from buildResolvedNudgeUrlSet.
-          await graffiti.post(
-            {
-              value: {
-                activity: 'Send',
-                type: 'NudgeRead',
-                emoji: latest.value?.emoji || '🔔',
-                published: Date.now(),
-              },
-              channels: [channel],
-            },
-            session.value
-          );
+        nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(latestKey);
+        await nextTick();
+        try {
+          await graffiti.delete(latest.url, session.value);
+        } catch (err) {
+          const nextT = new Set(nudgeTombstonedObjectUrls.value);
+          nextT.delete(latestKey);
+          nudgeTombstonedObjectUrls.value = nextT;
+          const nextD = new Set(nudgeDisappearingObjectUrls.value);
+          nextD.delete(latestKey);
+          nudgeDisappearingObjectUrls.value = nextD;
+          throw err;
         }
         const doneDisappearing = new Set(nudgeDisappearingObjectUrls.value);
         doneDisappearing.delete(latestKey);
@@ -672,13 +719,6 @@ function createNudgeState() {
         );
       }
       await pollChannelObjects();
-      if (
-        latest &&
-        canonicalActorId(latest.actor) !== canonicalActorId(session.value?.actor)
-      ) {
-        await new Promise(r => setTimeout(r, 450));
-        await pollChannelObjects();
-      }
       await nextTick();
       await new Promise(r => {
         requestAnimationFrame(() => requestAnimationFrame(r));
@@ -755,9 +795,16 @@ function createNudgeState() {
 
   function messageBubbleClass(item, opts) {
     const resolvedSet = opts?.resolvedNudgeUrls;
+    const ch = opts?.channel;
     const isResolvedRead = item.value?.type === 'NudgeRead';
     const isResolvedNudge =
       item.value?.type === 'Nudge' && resolvedSet instanceof Set && resolvedSet.has(item.url);
+    let tapToRead = false;
+    if (ch && item.value?.type === 'Nudge' && !isOwnActor(item.actor)) {
+      const cur = getLatestVisibleNudge(allChannelObjects.value, ch);
+      const resolved = buildResolvedNudgeUrlSet(allChannelObjects.value, ch);
+      tapToRead = !!(cur && cur.url === item.url && !resolved.has(item.url));
+    }
     const isNudge = item.value?.type === 'Nudge' || item.value?.type === 'NudgeRead';
     const isJoin = item.value?.type === 'ChannelJoin';
     const isFresh = isFreshNudge(item);
@@ -767,6 +814,7 @@ function createNudgeState() {
       'other-bubble': !isOwnMessage(item) && item.value?.type === 'Message',
       'nudge-bubble': isNudge,
       'nudge-bubble--resolved': isResolvedRead || isResolvedNudge,
+      'nudge-bubble--tap-to-read': tapToRead,
       'nudge-bubble--pop': isFresh && !isResolvedNudge,
       'nudge-bubble--pop-out': isDisappearing,
       'chat-join-bubble': isJoin,
@@ -853,6 +901,10 @@ function createNudgeState() {
     ownLatestNudgeForChannel,
     latestVisibleNudgeForChannel,
     peekLatestVisibleNudge,
+    isNudgeBellLockedForMe,
+    nudgeBellButtonTitle,
+    nudgeBellButtonAriaLabel,
+    readOthersVisibleNudge,
     isChatNudgePending,
     formatTime,
     messageRowClass,
@@ -1064,6 +1116,11 @@ function useChatPageState() {
     await s.postNudgeWithEmoji(ch.channel, emoji);
   }
 
+  async function onMessageBubbleClick(item) {
+    if (!item || item.value?.type !== 'Nudge' || !activeChat.value) return;
+    await s.readOthersVisibleNudge(activeChat.value.channel, item);
+  }
+
   return {
     activeChat,
     chatItems,
@@ -1080,6 +1137,7 @@ function useChatPageState() {
     openComposerNudgeEmojiPicker,
     closeComposerNudgeEmojiPicker,
     pickOneOffNudgeEmoji,
+    onMessageBubbleClick,
     isFreshNudge: s.isFreshNudge,
     isDisappearingNudge: s.isDisappearingNudge,
   };
@@ -1161,11 +1219,16 @@ const NudgeButton = {
     emoji: { type: String, required: true },
     isUndo: { type: Boolean, default: false },
     isPending: { type: Boolean, default: false },
+    /** When another user’s nudge is active — bell is disabled; dismiss by tapping their nudge in the thread. */
+    interactionLocked: { type: Boolean, default: false },
     title: { type: String, default: '' },
     ariaLabel: { type: String, default: '' },
   },
   emits: ['toggle'],
   computed: {
+    isDisabled() {
+      return this.isPending || this.interactionLocked;
+    },
     buttonClass() {
       if (this.variant === 'composer') {
         return {

@@ -28,7 +28,7 @@
     <button
       type="button"
       :class="buttonClass"
-      :disabled="isPending"
+      :disabled="isDisabled"
       :title="title"
       :aria-label="ariaLabel"
       @click.stop="onClick"
@@ -159,10 +159,11 @@
               <NudgeButton
                 variant="sidebar"
                 :emoji="nudgeEmojiForSidebarRow(chat)"
-                :is-undo="!!latestVisibleNudgeMap[chat.channel]"
+                :is-undo="!!latestVisibleNudgeMap[chat.channel] && !isNudgeBellLockedForMe(chat.channel)"
                 :is-pending="isChatNudgePending(chat.channel)"
-                :title="latestVisibleNudgeMap[chat.channel] ? 'Undo nudge' : 'Send nudge'"
-                :aria-label="latestVisibleNudgeMap[chat.channel] ? ('Undo nudge for ' + chat.title) : ('Nudge ' + chat.title)"
+                :interaction-locked="isNudgeBellLockedForMe(chat.channel)"
+                :title="nudgeBellButtonTitle(chat.channel, chat.title)"
+                :aria-label="nudgeBellButtonAriaLabel(chat.channel, chat.title)"
                 @toggle="sendNudgeToChat(chat)"
               />
             </li>
@@ -265,7 +266,11 @@
             class="message-row"
             :class="messageRowClass(item)"
           >
-            <div class="message-bubble" :class="messageBubbleClass(item, { resolvedNudgeUrls })">
+            <div
+              class="message-bubble"
+              :class="messageBubbleClass(item, { resolvedNudgeUrls, channel: activeChat.channel })"
+              @click="onMessageBubbleClick(item)"
+            >
               <template v-if="item.value.type === 'Message'">
                 <p class="message-text">{{ item.value.content }}</p>
               </template>
@@ -345,10 +350,11 @@
               <NudgeButton
                 variant="composer"
                 :emoji="composerNudgeButtonEmoji"
-                :is-undo="!!activeChatVisibleNudge"
+                :is-undo="!!activeChatVisibleNudge && !isNudgeBellLockedForMe(activeChat.channel)"
                 :is-pending="isChatNudgePending(activeChat.channel)"
-                :title="activeChatVisibleNudge ? 'Undo nudge' : 'Send nudge'"
-                :aria-label="activeChatVisibleNudge ? ('Undo nudge for ' + activeChat.title) : ('Nudge for ' + activeChat.title)"
+                :interaction-locked="isNudgeBellLockedForMe(activeChat.channel)"
+                :title="nudgeBellButtonTitle(activeChat.channel, activeChat.title)"
+                :aria-label="nudgeBellButtonAriaLabel(activeChat.channel, activeChat.title)"
                 @toggle="sendNudgeForCurrentChat"
               />
               <button

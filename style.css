@@ -261,7 +261,7 @@ input {
 
 .chat-sidebar-nudge:disabled {
     opacity: 0.55;
-    cursor: default;
+    cursor: not-allowed;
 }
 
 .chat-sidebar-nudge--undo {
@@ -483,6 +483,15 @@ a.chat-row.chat-row--active .chat-title {
     background: var(--nudge-resolved-bg);
     border-color: var(--nudge-resolved-border);
     color: var(--nudge-resolved-text);
+}
+
+.nudge-bubble.nudge-bubble--tap-to-read {
+    cursor: pointer;
+}
+
+.nudge-bubble.nudge-bubble--tap-to-read:hover {
+    filter: brightness(0.97);
+    box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.22);
 }
 
 .nudge-bubble--pop {
