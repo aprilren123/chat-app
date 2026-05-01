@@ -120,6 +120,14 @@ function normalizeChannelInput(raw) {
   }
 }
 
+/** Chat text body — `type` may be bare `Message` or an expanded vocab URL from Graffiti. */
+function isMessagePayload(value) {
+  const t = value?.type;
+  if (t === 'Message') return true;
+  if (typeof t !== 'string') return false;
+  return t.endsWith('/Message') || t.endsWith('#Message');
+}
+
 function canonicalActorId(actor) {
   if (actor == null || actor === '') return '';
   return String(actor).trim().split(/[?#]/, 1)[0];
@@ -207,7 +215,7 @@ function createNudgeState() {
       if (!o?.channels?.includes(channel)) continue;
       const typ = o.value?.type;
       if (
-        typ !== 'Message' &&
+        !isMessagePayload(o.value) &&
         typ !== 'Nudge' &&
         typ !== 'NudgeRead' &&
         typ !== 'ChatTitle' &&
@@ -802,14 +810,16 @@ function createNudgeState() {
   }
 
   function isOwnMessage(item) {
-    return canonicalActorId(item.actor) === canonicalActorId(session.value?.actor) && item.value?.type === 'Message';
+    return (
+      canonicalActorId(item.actor) === canonicalActorId(session.value?.actor) && isMessagePayload(item.value)
+    );
   }
 
   function messageRowClass(item) {
     const isNudgeEvent = item.value?.type === 'Nudge' || item.value?.type === 'NudgeRead';
     return {
       own: isOwnMessage(item),
-      other: !isOwnMessage(item) && item.value?.type === 'Message',
+      other: !isOwnMessage(item) && isMessagePayload(item.value),
       nudge: isNudgeEvent,
       join: item.value?.type === 'ChannelJoin',
     };
@@ -829,9 +839,9 @@ function createNudgeState() {
     const isDisappearing = isDisappearingNudge(item);
     return {
       'own-bubble': isOwnMessage(item),
-      'other-bubble': !isOwnMessage(item) && item.value?.type === 'Message',
-      /** Every text payload — use with `.messages-area` CSS so inset is consistent in all chats. */
-      'message-bubble--text': item.value?.type === 'Message',
+      'other-bubble': !isOwnMessage(item) && isMessagePayload(item.value),
+      /** Tight inset for every text message; not only when own/other actor matching works. */
+      'message-bubble--text': isMessagePayload(item.value),
       'nudge-bubble': isNudge,
       'nudge-bubble--resolved': isResolvedRead || isResolvedNudge,
       'nudge-bubble--tap-to-read': tapToRead,
@@ -989,6 +999,7 @@ function createNudgeState() {
     formatTime,
     messageRowClass,
     messageBubbleClass,
+    isMessagePayload,
     isOthersNudgeTapToDismiss,
     isFreshNudge,
     isDisappearingNudge,
@@ -1031,7 +1042,7 @@ function useChatPageState() {
       .filter(obj => {
         if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
         if (!obj.channels?.includes(ch)) return false;
-        if (obj.value?.type === 'Message') return true;
+        if (isMessagePayload(obj.value)) return true;
         if (obj.value?.type === 'NudgeRead') return true;
         if (obj.value?.type === 'ChannelJoin') return true;
         if (obj.value?.type === 'Nudge') {

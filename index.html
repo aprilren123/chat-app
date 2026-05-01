@@ -291,7 +291,7 @@
               :class="messageBubbleClass(item, { resolvedNudgeUrls, channel: activeChat.channel })"
               @click="onMessageBubbleClick(item)"
             >
-              <template v-if="item.value.type === 'Message'">
+              <template v-if="isMessagePayload(item.value)">
                 <p class="message-text">{{ item.value.content }}</p>
               </template>
 

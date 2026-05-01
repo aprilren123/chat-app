@@ -476,25 +476,6 @@ a.chat-row.chat-row--active .chat-title {
         #ffffff;
 }
 
-/* Bubble padding is scoped here (higher specificity) so it always applies in the thread,
-   and `message-bubble--text` marks every `Message` so horizontal inset isn’t missed. */
-.messages-area .message-bubble {
-    padding: 6px 16px 5px;
-}
-
-.messages-area .message-bubble.message-bubble--text {
-    padding: 6px 18px 5px;
-}
-
-.messages-area .message-bubble.nudge-bubble {
-    padding: 7px 18px 6px;
-}
-
-.messages-area .message-bubble.chat-join-bubble {
-    max-width: min(90%, 520px);
-    padding: 5px 14px 4px;
-}
-
 .message-row {
     display: flex;
     margin-bottom: 14px;
@@ -517,10 +498,8 @@ a.chat-row.chat-row--active .chat-title {
 }
 
 .chat-join-bubble {
-    max-width: min(90%, 520px);
     background: transparent;
     border: none;
-    padding: 6px 12px 4px;
     text-align: center;
 }
 
@@ -542,9 +521,19 @@ a.chat-row.chat-row--active .chat-title {
 .message-bubble {
     max-width: min(70%, 480px);
     border-radius: 22px;
+    padding: 6px 16px 5px;
 }
 
-.messages-area .message-bubble p {
+.message-bubble.message-bubble--text {
+    padding: 6px 18px 5px;
+}
+
+.message-bubble.chat-join-bubble {
+    max-width: min(90%, 520px);
+    padding: 5px 14px 4px;
+}
+
+.message-bubble p {
     margin: 0;
     padding: 0;
 }
@@ -567,6 +556,7 @@ a.chat-row.chat-row--active .chat-title {
     color: #5c4b12;
     text-align: center;
     max-width: 320px;
+    padding: 7px 18px 6px;
 }
 
 .nudge-bubble.nudge-bubble--resolved {
