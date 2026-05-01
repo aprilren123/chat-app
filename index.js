@@ -625,8 +625,7 @@ function createNudgeState() {
   function nudgeBellButtonTitle(channel, chatTitle) {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Please wait…';
-    if (isNudgeBellLockedForMe(channel))
-      return 'Someone nudged — touch this button (or “Nudge sent” in the chat) to dismiss';
+    if (isNudgeBellLockedForMe(channel)) return 'Dismiss nudge';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Nudge ${chatTitle || 'chat'}`;
   }
@@ -634,8 +633,7 @@ function createNudgeState() {
   function nudgeBellButtonAriaLabel(channel, chatTitle) {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Nudge action in progress';
-    if (isNudgeBellLockedForMe(channel))
-      return 'Someone nudged. Touch this button or the Nudge sent line in the thread to dismiss.';
+    if (isNudgeBellLockedForMe(channel)) return "Dismiss someone else's nudge";
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Send a nudge for ${chatTitle || 'this chat'}`;
   }

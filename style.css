@@ -443,17 +443,6 @@ a.chat-row.chat-row--active .chat-title {
     margin-right: 6px;
 }
 
-.chat-nudge-status-hint {
-    display: block;
-    width: 100%;
-    margin-top: 2px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    color: var(--muted);
-    line-height: 1.35;
-    text-align: right;
-}
-
 .chat-nudge-status-remaining {
     font-size: 0.82rem;
     font-weight: 500;

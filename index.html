@@ -257,10 +257,6 @@
                 Nudged
               </span>
               <span
-                v-if="isNudgeBellLockedForMe(activeChat.channel)"
-                class="chat-nudge-status-hint"
-              >Touch the nudge button or “Nudge sent” to clear.</span>
-              <span
                 v-if="nudgeBannerCountdown"
                 class="chat-nudge-status-remaining"
                 :class="{ 'chat-nudge-status-remaining--urgent': nudgeBannerCountdown.urgent }"
