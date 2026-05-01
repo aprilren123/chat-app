@@ -65,7 +65,7 @@ function nudgeObjectKey(obj) {
   return `${obj.url}|${obj.actor || ''}|${obj.value?.published || 0}`;
 }
 
-/** Nudge URLs cleared by a later `NudgeRead` (same emoji, reader ≠ nudge actor). */
+/** Nudge URLs cleared by a later `NudgeRead` (reader ≠ nudge actor; latest other’s nudge before that read). */
 function buildResolvedNudgeUrlSet(objects, channel) {
   const resolved = new Set();
   if (!channel || !objects?.length) return resolved;
@@ -93,11 +93,7 @@ function buildResolvedNudgeUrlSet(objects, channel) {
         best = o;
       }
     }
-    if (best?.url) {
-      const er = item.value?.emoji || '🔔';
-      const en = best.value?.emoji || '🔔';
-      if (er === en) resolved.add(best.url);
-    }
+    if (best?.url) resolved.add(best.url);
   }
   return resolved;
 }
@@ -623,13 +619,15 @@ function createNudgeState() {
     try {
       if (latest) {
         const latestKey = nudgeObjectKey(latest);
+        const isOwn = canonicalActorId(latest.actor) === canonicalActorId(session.value.actor);
+
         nudgeDisappearingObjectUrls.value = new Set(nudgeDisappearingObjectUrls.value).add(latestKey);
         await nextTick();
         await new Promise(r => setTimeout(r, NUDGE_POP_OUT_ANIMATION_MS));
 
-        nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(latestKey);
-        await nextTick();
-        if (canonicalActorId(latest.actor) === canonicalActorId(session.value.actor)) {
+        if (isOwn) {
+          nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(latestKey);
+          await nextTick();
           try {
             await graffiti.delete(latest.url, session.value);
           } catch (err) {
@@ -642,6 +640,7 @@ function createNudgeState() {
             throw err;
           }
         } else {
+          // No tombstone/delete here — the other user's "Nudge sent" stays in history; grey styling is from buildResolvedNudgeUrlSet.
           await graffiti.post(
             {
               value: {
@@ -673,6 +672,13 @@ function createNudgeState() {
         );
       }
       await pollChannelObjects();
+      if (
+        latest &&
+        canonicalActorId(latest.actor) !== canonicalActorId(session.value?.actor)
+      ) {
+        await new Promise(r => setTimeout(r, 450));
+        await pollChannelObjects();
+      }
       await nextTick();
       await new Promise(r => {
         requestAnimationFrame(() => requestAnimationFrame(r));
