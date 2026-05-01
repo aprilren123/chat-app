@@ -159,9 +159,8 @@
               <NudgeButton
                 variant="sidebar"
                 :emoji="nudgeEmojiForSidebarRow(chat)"
-                :is-undo="!!latestVisibleNudgeMap[chat.channel] && !isNudgeBellLockedForMe(chat.channel)"
+                :is-undo="!!latestVisibleNudgeMap[chat.channel]"
                 :is-pending="isChatNudgePending(chat.channel)"
-                :interaction-locked="isNudgeBellLockedForMe(chat.channel)"
                 :title="nudgeBellButtonTitle(chat.channel, chat.title)"
                 :aria-label="nudgeBellButtonAriaLabel(chat.channel, chat.title)"
                 @toggle="sendNudgeToChat(chat)"
@@ -276,7 +275,13 @@
               </template>
 
               <template v-else-if="item.value.type === 'Nudge'">
-                <p class="nudge-text">{{ item.value.emoji || '🔔' }} Nudge sent</p>
+                <p
+                  class="nudge-text"
+                  :class="{ 'nudge-text--tap-to-read': isOthersNudgeTapToDismiss(item, activeChat.channel) }"
+                  @click.stop="onMessageBubbleClick(item)"
+                >
+                  {{ item.value.emoji || '🔔' }} Nudge sent
+                </p>
               </template>
 
               <template v-else-if="item.value.type === 'NudgeRead'">
@@ -350,9 +355,8 @@
               <NudgeButton
                 variant="composer"
                 :emoji="composerNudgeButtonEmoji"
-                :is-undo="!!activeChatVisibleNudge && !isNudgeBellLockedForMe(activeChat.channel)"
+                :is-undo="!!activeChatVisibleNudge"
                 :is-pending="isChatNudgePending(activeChat.channel)"
-                :interaction-locked="isNudgeBellLockedForMe(activeChat.channel)"
                 :title="nudgeBellButtonTitle(activeChat.channel, activeChat.title)"
                 :aria-label="nudgeBellButtonAriaLabel(activeChat.channel, activeChat.title)"
                 @toggle="sendNudgeForCurrentChat"

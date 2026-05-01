@@ -561,6 +561,13 @@ a.chat-row.chat-row--active .chat-title {
 }
 
 .message-text,
+.nudge-text--tap-to-read {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+}
+
 .nudge-text {
     margin: 0;
     line-height: 1.4;

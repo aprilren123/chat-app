@@ -618,7 +618,8 @@ function createNudgeState() {
   function nudgeBellButtonTitle(channel, chatTitle) {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Please wait…';
-    if (isNudgeBellLockedForMe(channel)) return 'Someone nudged — tap their nudge in the chat to dismiss it';
+    if (isNudgeBellLockedForMe(channel))
+      return 'Someone nudged — tap the bell or their “Nudge sent” line in the chat to mark it read';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Nudge ${chatTitle || 'chat'}`;
   }
@@ -627,7 +628,7 @@ function createNudgeState() {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Nudge action in progress';
     if (isNudgeBellLockedForMe(channel))
-      return 'Someone nudged this chat. Open the conversation and tap their nudge in the thread to mark it read.';
+      return 'Someone nudged this chat. Tap this button or their nudge in the thread to mark it read.';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Send a nudge for ${chatTitle || 'this chat'}`;
   }
@@ -668,6 +669,12 @@ function createNudgeState() {
       done.delete(channel);
       nudgePendingChannels.value = done;
     }
+  }
+
+  async function readOthersNudgeFromChannel(channel) {
+    const latest = getLatestVisibleNudge(allChannelObjects.value, channel);
+    if (!latest) return;
+    await readOthersVisibleNudge(channel, latest);
   }
 
   async function toggleNudgeForChannel(channel) {
@@ -733,7 +740,11 @@ function createNudgeState() {
 
   async function sendNudgeToChat(chat) {
     if (!chat?.channel) return;
-    await toggleNudgeForChannel(chat.channel);
+    if (isNudgeBellLockedForMe(chat.channel)) {
+      await readOthersNudgeFromChannel(chat.channel);
+    } else {
+      await toggleNudgeForChannel(chat.channel);
+    }
   }
 
   async function postNudgeWithEmoji(channel, emoji) {
@@ -799,12 +810,8 @@ function createNudgeState() {
     const isResolvedRead = item.value?.type === 'NudgeRead';
     const isResolvedNudge =
       item.value?.type === 'Nudge' && resolvedSet instanceof Set && resolvedSet.has(item.url);
-    let tapToRead = false;
-    if (ch && item.value?.type === 'Nudge' && !isOwnActor(item.actor)) {
-      const cur = getLatestVisibleNudge(allChannelObjects.value, ch);
-      const resolved = buildResolvedNudgeUrlSet(allChannelObjects.value, ch);
-      tapToRead = !!(cur && cur.url === item.url && !resolved.has(item.url));
-    }
+    const tapToRead =
+      ch && item.value?.type === 'Nudge' ? isOthersNudgeTapToDismiss(item, ch) : false;
     const isNudge = item.value?.type === 'Nudge' || item.value?.type === 'NudgeRead';
     const isJoin = item.value?.type === 'ChannelJoin';
     const isFresh = isFreshNudge(item);
@@ -862,6 +869,15 @@ function createNudgeState() {
     return canonicalActorId(actor) === canonicalActorId(session.value?.actor);
   }
 
+  /** True when this `Nudge` object is the current “someone else nudged” target (tap bell or message to dismiss). */
+  function isOthersNudgeTapToDismiss(item, channel) {
+    if (!channel || !item || item.value?.type !== 'Nudge') return false;
+    if (isOwnActor(item.actor)) return false;
+    const cur = getLatestVisibleNudge(allChannelObjects.value, channel);
+    const resolved = buildResolvedNudgeUrlSet(allChannelObjects.value, channel);
+    return !!(cur && cur.url === item.url && !resolved.has(item.url));
+  }
+
   function scrollMessagesToBottom() {
     const box = document.querySelector('.messages-area');
     if (box) box.scrollTop = box.scrollHeight;
@@ -905,10 +921,12 @@ function createNudgeState() {
     nudgeBellButtonTitle,
     nudgeBellButtonAriaLabel,
     readOthersVisibleNudge,
+    readOthersNudgeFromChannel,
     isChatNudgePending,
     formatTime,
     messageRowClass,
     messageBubbleClass,
+    isOthersNudgeTapToDismiss,
     isFreshNudge,
     isDisappearingNudge,
     displayActor,
@@ -976,6 +994,11 @@ function useChatPageState() {
   });
 
   const composerNudgeButtonEmoji = computed(() => {
+    const ch = activeChat.value?.channel;
+    if (ch && s.isNudgeBellLockedForMe(ch)) {
+      const latest = s.peekLatestVisibleNudge(ch);
+      return latest?.value?.emoji || '🔔';
+    }
     const n = activeChatLatestNudge.value;
     if (n?.value?.type === 'Nudge') {
       return n.value.emoji || '🔔';
@@ -1193,7 +1216,7 @@ const ChatPage = {
       },
       async sendNudgeForCurrentChat() {
         if (!c.activeChat.value) return;
-        await s.toggleNudgeForChannel(c.activeChat.value.channel);
+        await s.sendNudgeToChat(c.activeChat.value);
       },
     };
   },
@@ -1219,7 +1242,7 @@ const NudgeButton = {
     emoji: { type: String, required: true },
     isUndo: { type: Boolean, default: false },
     isPending: { type: Boolean, default: false },
-    /** When another user’s nudge is active — bell is disabled; dismiss by tapping their nudge in the thread. */
+    /** Reserved; bell is enabled and marks read when someone else’s nudge is active. */
     interactionLocked: { type: Boolean, default: false },
     title: { type: String, default: '' },
     ariaLabel: { type: String, default: '' },
