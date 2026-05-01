@@ -76,6 +76,20 @@ function normalizeChannelInput(raw) {
   }
 }
 
+/** Normalize actor id for comparisons and handle-cache keys (trim, strip fragment/query). */
+function canonicalActorId(actor) {
+  if (actor == null || actor === '') return '';
+  return String(actor).trim().split('#')[0].split('?')[0];
+}
+
+/** Resolve `actorToHandle` from the synchronize wrapper or the underlying Graffiti instance. */
+function getActorToHandleFn(g) {
+  if (typeof g?.actorToHandle === 'function') return g.actorToHandle.bind(g);
+  const raw = g?.graffiti;
+  if (typeof raw?.actorToHandle === 'function') return raw.actorToHandle.bind(raw);
+  return null;
+}
+
 function useNudgeStore() {
   return inject(NUDGE);
 }
@@ -257,6 +271,35 @@ function createNudgeState() {
       true
     );
 
+  /** Channel ids we discover (owned + joined); used to poll so everyone sees e.g. ChannelJoin soon. */
+  const discoverChannelIdsKey = computed(() => {
+    if (!session.value?.actor) return '';
+    const ids = new Set([
+      ...chatObjects.value
+        .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
+        .map(obj => obj.value?.channel)
+        .filter(Boolean),
+      ...joinedChats.value.map(c => c.channel).filter(Boolean),
+    ]);
+    if (ids.size === 0) return '';
+    return [...ids].sort().join('\0');
+  });
+
+  let channelObjectsPollTimer = /** @type {ReturnType<typeof setInterval> | null} */ (null);
+  watch(
+    discoverChannelIdsKey,
+    key => {
+      if (channelObjectsPollTimer) {
+        clearInterval(channelObjectsPollTimer);
+        channelObjectsPollTimer = null;
+      }
+      if (!key) return;
+      void pollChannelObjects();
+      channelObjectsPollTimer = setInterval(() => void pollChannelObjects(), 12000);
+    },
+    { immediate: true }
+  );
+
   watch(
     allChannelObjects,
     () => {
@@ -269,26 +312,29 @@ function createNudgeState() {
     [allChannelObjects, chatObjects, () => session.value?.actor],
     async () => {
       const me = session.value?.actor;
-      if (!me || typeof graffiti.actorToHandle !== 'function') return;
+      const resolveHandle = getActorToHandleFn(graffiti);
+      if (!me || !resolveHandle) return;
 
       const actors = new Set();
       for (const o of allChannelObjects.value || []) {
-        if (o?.actor) actors.add(o.actor);
+        const k = canonicalActorId(o?.actor);
+        if (k) actors.add(k);
       }
       for (const o of chatObjects.value || []) {
-        if (o?.actor) actors.add(o.actor);
+        const k = canonicalActorId(o?.actor);
+        if (k) actors.add(k);
       }
 
       for (const actor of actors) {
-        if (actor === me) continue;
         if (actorHandleCache.value[actor]) continue;
         try {
-          const handle = await graffiti.actorToHandle(actor);
-          if (handle && typeof handle === 'string') {
-            actorHandleCache.value = { ...actorHandleCache.value, [actor]: handle };
+          const handle = await resolveHandle(actor);
+          const label = typeof handle === 'string' ? handle.trim() : '';
+          if (label) {
+            actorHandleCache.value = { ...actorHandleCache.value, [actor]: label };
           }
         } catch {
-          /* displayActor falls back to formatActorFromGraffitiActor */
+          /* displayActor / displayJoinName fall back to formatActorFromGraffitiActor */
         }
       }
     },
@@ -325,6 +371,18 @@ function createNudgeState() {
             activity: 'Create',
             type: 'ChatTitle',
             title: newChatTitle.value,
+            published: Date.now(),
+          },
+          channels: [chatChannel],
+        },
+        session.value
+      );
+
+      await graffiti.post(
+        {
+          value: {
+            activity: 'Send',
+            type: 'ChannelJoin',
             published: Date.now(),
           },
           channels: [chatChannel],
@@ -442,7 +500,7 @@ function createNudgeState() {
         !hidden.has(nudgeObjectKey(o)) &&
         o.channels?.includes(channel) &&
         o.value?.type === 'Nudge' &&
-        o.actor === actor
+        canonicalActorId(o.actor) === canonicalActorId(actor)
     );
     if (!mine.length) return null;
     mine.sort((a, b) => (b.value?.published || 0) - (a.value?.published || 0));
@@ -539,7 +597,7 @@ function createNudgeState() {
 
         nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(latestKey);
         await nextTick();
-        if (latest.actor === session.value.actor) {
+        if (canonicalActorId(latest.actor) === canonicalActorId(session.value.actor)) {
           try {
             await graffiti.delete(latest.url, session.value);
           } catch (err) {
@@ -644,7 +702,7 @@ function createNudgeState() {
   }
 
   function isOwnMessage(item) {
-    return item.actor === session.value?.actor && item.value?.type === 'Message';
+    return canonicalActorId(item.actor) === canonicalActorId(session.value?.actor) && item.value?.type === 'Message';
   }
 
   function messageRowClass(item) {
@@ -685,7 +743,19 @@ function createNudgeState() {
   function formatActorFromGraffitiActor(actor) {
     if (!actor) return 'Someone';
     const raw = String(actor).trim();
-    const s = raw.split('?')[0].split('#')[0];
+    const s = canonicalActorId(raw);
+
+    if (s.startsWith('did:web:')) {
+      let host = s.slice('did:web:'.length).replace(/:\d+$/, '');
+      host = host.split('/')[0] || host;
+      if (host) return host.replace(/^www\./i, '') || 'Someone';
+    }
+    if (s.startsWith('did:plc:')) {
+      return s.length > 28 ? `${s.slice(0, 24)}…` : s;
+    }
+    if (s.startsWith('did:')) {
+      return s.length > 32 ? `${s.slice(0, 28)}…` : s;
+    }
 
     // Graffiti actors are usually "...username.graffiti.actor" (case-insensitive)
     const m = s.match(/(.*?)(\.graffiti\.actor|\.grafitti\.actor)/i);
@@ -712,14 +782,24 @@ function createNudgeState() {
   }
 
   function displayActor(actor) {
-    if (actor === session.value?.actor) return 'You';
-    const handle = actorHandleCache.value[actor];
+    const me = session.value?.actor;
+    if (canonicalActorId(me) && canonicalActorId(actor) === canonicalActorId(me)) return 'You';
+    const key = canonicalActorId(actor);
+    const handle = key ? actorHandleCache.value[key] : '';
+    if (handle) return handle;
+    return formatActorFromGraffitiActor(actor);
+  }
+
+  /** Graffiti handle (or DID fallback) for system lines like ChannelJoin — never the generic "You". */
+  function displayJoinName(actor) {
+    const key = canonicalActorId(actor);
+    const handle = key ? actorHandleCache.value[key] : '';
     if (handle) return handle;
     return formatActorFromGraffitiActor(actor);
   }
 
   function isOwnActor(actor) {
-    return actor === session.value?.actor;
+    return canonicalActorId(actor) === canonicalActorId(session.value?.actor);
   }
 
   function scrollMessagesToBottom() {
@@ -732,7 +812,6 @@ function createNudgeState() {
   const visibleChats = computed(() => {
     const list = chats.value;
     if (chatFilter.value === 'nudges') {
-      // Same rule as sidebar/header "nudged" state: latest visible nudge in channel (any actor).
       const map = latestVisibleNudgeMap.value;
       return list.filter(c => Boolean(map[c.channel]));
     }
@@ -768,6 +847,7 @@ function createNudgeState() {
     isFreshNudge,
     isDisappearingNudge,
     displayActor,
+    displayJoinName,
     isOwnActor,
     ownVisibleNudgeMap,
     ownLatestNudgeMap,
@@ -777,6 +857,7 @@ function createNudgeState() {
     postNudgeWithEmoji,
     postTypingSignal,
     scrollMessagesToBottom,
+    pollChannelObjects,
   };
 }
 
@@ -875,13 +956,24 @@ function useChatPageState() {
   });
 
   let nudgeBannerTimer = null;
+  function pollMessagesIfTabVisible() {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (route.name !== 'chat') return;
+    void s.pollChannelObjects();
+  }
   onMounted(() => {
     nudgeBannerTimer = setInterval(() => {
       nowTick.value = Date.now();
     }, 1000);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', pollMessagesIfTabVisible);
+    }
   });
   onUnmounted(() => {
     if (nudgeBannerTimer) clearInterval(nudgeBannerTimer);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', pollMessagesIfTabVisible);
+    }
   });
 
   const showNudgeEmojiPicker = ref(false);

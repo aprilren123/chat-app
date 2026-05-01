@@ -279,7 +279,7 @@
               </template>
 
               <template v-else-if="item.value.type === 'ChannelJoin'">
-                <p class="chat-join-text">{{ displayActor(item.actor) }} joined the chat</p>
+                <p class="chat-join-text">{{ displayJoinName(item.actor) }} joined the chat</p>
                 <p class="chat-join-meta">{{ formatTime(item.value.published) }}</p>
               </template>
 
