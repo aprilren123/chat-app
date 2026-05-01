@@ -416,14 +416,6 @@
           >
             {{ isSendingMessage ? 'Sending...' : 'Send' }}
           </button>
-          <p
-            v-if="isNudgeBellLockedForMe(activeChat.channel)"
-            class="composer-nudge-hint"
-            role="note"
-          >
-            <strong>New nudge</strong> — touch the highlighted button or the
-            <kbd>Nudge sent</kbd> line in the thread to clear it. The emoji menu returns after that.
-          </p>
         </footer>
       </template>
     </div>
