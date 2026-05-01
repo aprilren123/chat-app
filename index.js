@@ -1163,6 +1163,9 @@ function useChatPageState() {
     onMessageBubbleClick,
     isFreshNudge: s.isFreshNudge,
     isDisappearingNudge: s.isDisappearingNudge,
+    /** Explicit for chat template (spread from inject can omit in some edge cases). */
+    isOthersNudgeTapToDismiss: s.isOthersNudgeTapToDismiss,
+    isNudgeBellLockedForMe: s.isNudgeBellLockedForMe,
   };
 }
 
@@ -1192,6 +1195,8 @@ const MainLayout = {
 
     return {
       ...s,
+      /** Sidebar / list rows may bind to this (e.g. interaction state). */
+      isNudgeBellLockedForMe: s.isNudgeBellLockedForMe,
       onChatRowClick,
       nudgeEmojiForSidebarRow,
     };
@@ -1210,6 +1215,8 @@ const ChatPage = {
     return {
       ...s,
       ...c,
+      isOthersNudgeTapToDismiss: s.isOthersNudgeTapToDismiss,
+      isNudgeBellLockedForMe: s.isNudgeBellLockedForMe,
       async sendMessageForCurrentChat() {
         if (!c.activeChat.value) return;
         await s.sendMessageToChannel(c.activeChat.value.channel);
