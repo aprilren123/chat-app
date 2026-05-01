@@ -115,7 +115,7 @@
                 :class="{ active: chatFilter === 'all' }"
                 :aria-selected="chatFilter === 'all'"
                 title="Show all conversations"
-                @click="chatFilter = 'all'"
+                @click="setChatFilter('all')"
               >
                 All
               </button>
@@ -127,7 +127,7 @@
                 :aria-selected="chatFilter === 'nudgesSent'"
                 title="Nudges sent — chats where your nudge is still active"
                 aria-label="Nudges sent"
-                @click="chatFilter = 'nudgesSent'"
+                @click="setChatFilter('nudgesSent')"
               >
                 Nudges sent
               </button>
@@ -139,7 +139,7 @@
                 :aria-selected="chatFilter === 'nudgesReceived'"
                 title="Nudges received — chats where someone nudged you (active nudge)"
                 aria-label="Nudges received"
-                @click="chatFilter = 'nudgesReceived'"
+                @click="setChatFilter('nudgesReceived')"
               >
                 Nudges received
               </button>
@@ -222,7 +222,7 @@
   </script>
 
   <script type="text/x-template" id="chat-template">
-    <div class="chat-route">
+    <div class="chat-route" :class="{ 'chat-route--active': !!activeChat }">
       <div v-if="!activeChat" class="no-chat-selected">
         <div class="empty-card">
           <p class="mini-label">Messages</p>

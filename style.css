@@ -44,9 +44,11 @@ input {
 
 .app-shell {
     box-sizing: border-box;
-    min-height: 100%;
-    height: 100%;
-    max-height: 100%;
+    height: 100vh;
+    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 0;
     padding: 24px;
     display: flex;
     flex-direction: column;
@@ -149,9 +151,22 @@ input {
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    flex: 1 1 auto;
+    flex: 1 1 0%;
+    align-self: stretch;
     overflow: hidden;
     background: #ffffff;
+}
+
+.chat-panel > .settings-page {
+    flex: 1 1 0%;
+    min-height: 0;
+    min-width: 0;
+}
+
+.chat-panel > .no-chat-selected {
+    flex: 1 1 0%;
+    min-height: 0;
+    min-width: 0;
 }
 
 .sidebar-brand h1,
@@ -450,7 +465,6 @@ a.chat-row.chat-row--active .chat-title {
 }
 
 .messages-area {
-    flex: 1 1 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -1016,14 +1030,28 @@ a.ghost-button.sidebar-link-button {
     box-sizing: border-box;
 }
 
-.chat-route {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
+/**
+ * Chat layout: only `.messages-area` scrolls. Grid middle row is `minmax(0,1fr)` so
+ * flex `min-height:auto` cannot eat the viewport and hide the composer.
+ */
+.chat-panel > .chat-route {
+    flex: 1 1 0%;
     min-height: 0;
     min-width: 0;
+    width: 100%;
     overflow: hidden;
-    align-self: stretch;
+}
+
+.chat-route--active {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-content: stretch;
+}
+
+.chat-route:not(.chat-route--active) {
+    display: flex;
+    flex-direction: column;
 }
 
 .chat-header,

@@ -890,7 +890,8 @@ function createNudgeState() {
   }
 
   function scrollMessagesToBottom() {
-    const box = document.querySelector('.messages-area');
+    const box =
+      document.querySelector('.chat-route .messages-area') || document.querySelector('.messages-area');
     if (!box) return;
     const run = () => {
       box.scrollTop = box.scrollHeight;
@@ -904,30 +905,53 @@ function createNudgeState() {
 
   const chatFilter = ref(/** @type {'all' | 'nudgesSent' | 'nudgesReceived'} */ ('all'));
 
+  function setChatFilter(/** @type {'all' | 'nudgesSent' | 'nudgesReceived'} */ mode) {
+    if (mode === 'all' || mode === 'nudgesSent' || mode === 'nudgesReceived') {
+      chatFilter.value = mode;
+    }
+  }
+
   const visibleChats = computed(() => {
+    void listResortNonce.value;
+    const objects = allChannelObjects.value || [];
     const list = chats.value;
     const mode = chatFilter.value;
     if (mode === 'all') return list;
 
-    const map = latestVisibleNudgeMap.value;
     const me = canonicalActorId(session.value?.actor);
-    if (!me) return list;
+    if (!me) return [];
 
+    const channelKey = c => String(c?.channel ?? '').trim();
+
+    /** Same “active nudge” rule as the thread and sidebar (`getLatestVisibleNudge`). */
+    function activeNudgeForChat(c) {
+      const ch = channelKey(c);
+      if (!ch) return null;
+      return getLatestVisibleNudge(objects, ch);
+    }
+
+    let filtered;
     if (mode === 'nudgesSent') {
-      return list.filter(c => {
-        const n = map[c.channel];
-        return n && canonicalActorId(n.actor) === me;
+      filtered = list.filter(c => {
+        const n = activeNudgeForChat(c);
+        return !!(n && canonicalActorId(n.actor) === me);
       });
+    } else if (mode === 'nudgesReceived') {
+      filtered = list.filter(c => {
+        const n = activeNudgeForChat(c);
+        return !!(n && canonicalActorId(n.actor) !== me);
+      });
+    } else {
+      filtered = list;
     }
 
-    if (mode === 'nudgesReceived') {
-      return list.filter(c => {
-        const n = map[c.channel];
-        return n && canonicalActorId(n.actor) !== me;
-      });
-    }
+    filtered.sort((a, b) => {
+      const pa = activeNudgeForChat(a)?.value?.published ?? 0;
+      const pb = activeNudgeForChat(b)?.value?.published ?? 0;
+      return pb - pa;
+    });
 
-    return list;
+    return filtered;
   });
 
   return {
@@ -935,6 +959,7 @@ function createNudgeState() {
     draftMessage,
     chats,
     chatFilter,
+    setChatFilter,
     visibleChats,
     isLoadingChats,
     isLoadingMessages,
