@@ -335,7 +335,7 @@
                 :key="e"
                 type="button"
                 class="nudge-emoji-option"
-                :title="(activeChat && ownVisibleNudgeMap[activeChat.channel]) ? ('Change nudge to ' + e) : ('Send nudge with ' + e)"
+                :title="(activeChat && ownVisibleNudgeMap[activeChat.channel]) ? (e === defaultNudgeEmoji ? 'Undo nudge' : ('Change nudge to ' + e)) : ('Send nudge with ' + e)"
                 @click="pickOneOffNudgeEmoji(e)"
               >
                 {{ e }}
@@ -355,8 +355,8 @@
                 type="button"
                 class="nudge-picker-chevron"
                 :disabled="isChatNudgePending(activeChat.channel)"
-                title="Pick emoji for this nudge (changes current nudge if you already sent one)"
-                aria-label="Pick nudge emoji. If you already nudged, choosing another replaces it; does not change Settings default"
+                title="Pick nudge emoji (one row per person; your saved default clears your nudge)"
+                aria-label="Pick nudge emoji. Another emoji updates your nudge; your default emoji undoes it"
                 @click.stop="openComposerNudgeEmojiPicker"
               >
                 ▾
