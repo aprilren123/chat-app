@@ -629,7 +629,8 @@ function createNudgeState() {
   function nudgeBellButtonTitle(channel, chatTitle) {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Please wait…';
-    if (isNudgeBellLockedForMe(channel)) return 'Tap to dismiss their nudge';
+    if (isNudgeBellLockedForMe(channel))
+      return 'Someone nudged — touch this button (or “Nudge sent” in the chat) to dismiss';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Nudge ${chatTitle || 'chat'}`;
   }
@@ -638,7 +639,7 @@ function createNudgeState() {
     if (!channel) return 'Send nudge';
     if (isChatNudgePending(channel)) return 'Nudge action in progress';
     if (isNudgeBellLockedForMe(channel))
-      return 'Dismiss their nudge: tap this bell or the Nudge sent line in the thread.';
+      return 'Someone nudged. Touch this button or the Nudge sent line in the thread to dismiss.';
     if (peekLatestVisibleNudge(channel)) return 'Undo your nudge';
     return `Send a nudge for ${chatTitle || 'this chat'}`;
   }
@@ -879,7 +880,7 @@ function createNudgeState() {
     return canonicalActorId(actor) === canonicalActorId(session.value?.actor);
   }
 
-  /** True when this `Nudge` object is the current “someone else nudged” target (tap bell or message to dismiss). */
+  /** True when this `Nudge` object is the current “someone else nudged” target (tap nudge button or message to dismiss). */
   function isOthersNudgeTapToDismiss(item, channel) {
     if (!channel || !item || item.value?.type !== 'Nudge') return false;
     if (isOwnActor(item.actor)) return false;
@@ -901,14 +902,31 @@ function createNudgeState() {
     });
   }
 
-  const chatFilter = ref(/** @type {'all' | 'nudges'} */ ('all'));
+  const chatFilter = ref(/** @type {'all' | 'nudgesSent' | 'nudgesReceived'} */ ('all'));
 
   const visibleChats = computed(() => {
     const list = chats.value;
-    if (chatFilter.value === 'nudges') {
-      const map = latestVisibleNudgeMap.value;
-      return list.filter(c => Boolean(map[c.channel]));
+    const mode = chatFilter.value;
+    if (mode === 'all') return list;
+
+    const map = latestVisibleNudgeMap.value;
+    const me = canonicalActorId(session.value?.actor);
+    if (!me) return list;
+
+    if (mode === 'nudgesSent') {
+      return list.filter(c => {
+        const n = map[c.channel];
+        return n && canonicalActorId(n.actor) === me;
+      });
     }
+
+    if (mode === 'nudgesReceived') {
+      return list.filter(c => {
+        const n = map[c.channel];
+        return n && canonicalActorId(n.actor) !== me;
+      });
+    }
+
     return list;
   });
 
@@ -1103,13 +1121,17 @@ function useChatPageState() {
 
   const showNudgeEmojiPicker = ref(false);
 
+  /** Shallow fingerprint only — deep watch on long threads thrashed scroll and froze the UI. */
   watch(
-    chatItems,
+    () => {
+      const items = chatItems.value;
+      const last = items.length ? items[items.length - 1] : null;
+      return `${activeChat.value?.channel ?? ''}:${items.length}:${last?.url ?? ''}:${last?.value?.published ?? ''}`;
+    },
     async () => {
       await nextTick();
       s.scrollMessagesToBottom();
-    },
-    { deep: true }
+    }
   );
   watch(
     () => activeChat.value?.channel,
@@ -1138,9 +1160,11 @@ function useChatPageState() {
       if (nudge) showNudgeEmojiPicker.value = false;
     }
   );
-  watch(showTypingIndicator, async () => {
-    await nextTick();
-    s.scrollMessagesToBottom();
+  watch(showTypingIndicator, async (typing, wasTyping) => {
+    if (typing && !wasTyping) {
+      await nextTick();
+      s.scrollMessagesToBottom();
+    }
   });
   watch(
     [() => activeChat.value?.channel, () => s.draftMessage.value],

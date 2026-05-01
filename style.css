@@ -19,11 +19,22 @@
     box-sizing: border-box;
 }
 
+html {
+    height: 100%;
+}
+
 body {
     margin: 0;
+    min-height: 100%;
+    height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
     background: linear-gradient(to bottom, #ececf1, #f7f7fa);
     color: var(--text);
+}
+
+#app {
+    min-height: 100%;
+    height: 100%;
 }
 
 button,
@@ -32,22 +43,28 @@ input {
 }
 
 .app-shell {
-    min-height: 100vh;
+    box-sizing: border-box;
+    min-height: 100%;
+    height: 100%;
+    max-height: 100%;
     padding: 24px;
     display: flex;
     flex-direction: column;
-    box-sizing: border-box;
+    overflow: hidden;
 }
 
-.app-shell > .app-frame {
-    flex: 1 1 auto;
+.app-shell .app-frame {
+    flex: 1 1 0%;
     min-height: 0;
-    max-height: calc(100vh - 48px);
+    min-width: 0;
+    width: min(1200px, 100%);
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .login-screen {
-    flex: 1;
-    min-height: calc(100vh - 48px);
+    flex: 1 1 0%;
+    min-height: 0;
     display: grid;
     place-items: center;
 }
@@ -63,8 +80,6 @@ input {
 }
 
 .app-frame {
-    width: min(1200px, 100%);
-    margin: 0 auto;
     background: rgba(255, 255, 255, 0.72);
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.7);
@@ -72,9 +87,15 @@ input {
     overflow: hidden;
     display: grid;
     grid-template-columns: 340px 1fr;
+    grid-template-rows: minmax(0, 1fr);
     min-height: 0;
-    height: 100%;
+    align-self: stretch;
     box-shadow: var(--shadow);
+}
+
+.app-frame > .sidebar,
+.app-frame > .chat-panel {
+    min-height: 0;
 }
 
 .sidebar {
@@ -204,14 +225,17 @@ input {
 .chat-filter button {
     border: none;
     border-radius: 999px;
-    padding: 6px 10px;
+    padding: 6px 7px;
     background: transparent;
     color: var(--muted);
     font-weight: 600;
-    font-size: 0.72rem;
+    font-size: 0.62rem;
     cursor: pointer;
-    line-height: 1.2;
-    white-space: nowrap;
+    line-height: 1.15;
+    white-space: normal;
+    text-align: center;
+    max-width: 104px;
+    hyphens: auto;
 }
 
 .chat-filter button:hover {
@@ -430,6 +454,7 @@ a.chat-row.chat-row--active .chat-title {
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 22px 24px;
     -webkit-overflow-scrolling: touch;
     background:
@@ -942,7 +967,8 @@ input:focus {
 }
 
 .no-chat-selected {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     place-items: center;
     padding: 24px;
@@ -997,6 +1023,7 @@ a.ghost-button.sidebar-link-button {
     min-height: 0;
     min-width: 0;
     overflow: hidden;
+    align-self: stretch;
 }
 
 .chat-header,
@@ -1070,21 +1097,20 @@ a.ghost-button.sidebar-link-button {
 @media (max-width: 900px) {
     .app-frame {
         grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
     }
 
     .sidebar {
         border-right: none;
         border-bottom: 1px solid var(--border);
+        max-height: min(42vh, 360px);
+        overflow-y: auto;
     }
 }
 
 @media (max-width: 640px) {
     .app-shell {
         padding: 12px;
-    }
-
-    .app-shell > .app-frame {
-        max-height: calc(100vh - 24px);
     }
 
     .app-frame {

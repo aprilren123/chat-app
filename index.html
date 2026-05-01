@@ -106,7 +106,7 @@
               v-if="!isLoadingChats && chats.length"
               class="chat-filter"
               role="tablist"
-              aria-label="Chat filter"
+              aria-label="Filter chats"
             >
               <button
                 type="button"
@@ -114,19 +114,34 @@
                 role="tab"
                 :class="{ active: chatFilter === 'all' }"
                 :aria-selected="chatFilter === 'all'"
+                title="Show all conversations"
                 @click="chatFilter = 'all'"
               >
                 All
               </button>
               <button
                 type="button"
-                id="filter-nudges"
+                id="filter-nudges-sent"
                 role="tab"
-                :class="{ active: chatFilter === 'nudges' }"
-                :aria-selected="chatFilter === 'nudges'"
-                @click="chatFilter = 'nudges'"
+                :class="{ active: chatFilter === 'nudgesSent' }"
+                :aria-selected="chatFilter === 'nudgesSent'"
+                title="Nudges sent — chats where your nudge is still active"
+                aria-label="Nudges sent"
+                @click="chatFilter = 'nudgesSent'"
               >
-                Nudges
+                Nudges sent
+              </button>
+              <button
+                type="button"
+                id="filter-nudges-received"
+                role="tab"
+                :class="{ active: chatFilter === 'nudgesReceived' }"
+                :aria-selected="chatFilter === 'nudgesReceived'"
+                title="Nudges received — chats where someone nudged you (active nudge)"
+                aria-label="Nudges received"
+                @click="chatFilter = 'nudgesReceived'"
+              >
+                Nudges received
               </button>
             </div>
           </div>
@@ -173,7 +188,8 @@
             v-else-if="chats.length > 0 && !visibleChats.length"
             class="empty-state"
           >
-            <template v-if="chatFilter === 'nudges'">No nudged conversations right now.</template>
+            <template v-if="chatFilter === 'nudgesSent'">No active nudges from you right now.</template>
+            <template v-else-if="chatFilter === 'nudgesReceived'">No active nudges for you right now.</template>
           </div>
           <div v-else class="empty-state">
             No chats yet. Create one to get started.
@@ -243,7 +259,7 @@
               <span
                 v-if="isNudgeBellLockedForMe(activeChat.channel)"
                 class="chat-nudge-status-hint"
-              >Tap the bell or “Nudge sent” to clear.</span>
+              >Touch the nudge button or “Nudge sent” to clear.</span>
               <span
                 v-if="nudgeBannerCountdown"
                 class="chat-nudge-status-remaining"
@@ -405,7 +421,7 @@
             class="composer-nudge-hint"
             role="note"
           >
-            <strong>New nudge</strong> — tap the highlighted bell or the
+            <strong>New nudge</strong> — touch the highlighted button or the
             <kbd>Nudge sent</kbd> line in the thread to clear it. The emoji menu returns after that.
           </p>
         </footer>
