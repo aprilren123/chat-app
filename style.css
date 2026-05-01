@@ -526,6 +526,21 @@ a.chat-row.chat-row--active .chat-title {
     padding: 6px 12px 5px;
 }
 
+/* Plain text bubbles only — tighter inset; nudges / joins override below. */
+.message-bubble.own-bubble,
+.message-bubble.other-bubble {
+    padding: 4px 10px 3px;
+}
+
+.message-bubble.nudge-bubble {
+    padding: 7px 11px 6px;
+}
+
+.message-bubble.chat-join-bubble {
+    max-width: min(90%, 520px);
+    padding: 5px 10px 4px;
+}
+
 .own-bubble {
     background: var(--blue);
     color: white;
@@ -629,7 +644,7 @@ a.chat-row.chat-row--active .chat-title {
 
 .message-text {
     margin: 0;
-    line-height: 1.35;
+    line-height: 1.3;
     word-break: break-word;
 }
 
@@ -647,9 +662,10 @@ a.chat-row.chat-row--active .chat-title {
 }
 
 .message-meta {
-    margin: 3px 0 0;
+    margin: 2px 0 0;
     font-size: 0.75rem;
     opacity: 0.8;
+    line-height: 1.25;
 }
 
 .typing-indicator-bubble {
