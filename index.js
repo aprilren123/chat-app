@@ -1283,6 +1283,7 @@ const ChatPage = {
     return {
       ...s,
       ...c,
+      isMessagePayload,
       async sendMessageForCurrentChat() {
         if (!c.activeChat.value) return;
         await s.sendMessageToChannel(c.activeChat.value.channel);
