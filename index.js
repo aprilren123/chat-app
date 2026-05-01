@@ -643,42 +643,20 @@ function createNudgeState() {
     if (!session.value || !channel || !emoji) return;
     if (nudgePendingChannels.value.has(channel)) return;
 
-    const actor = session.value.actor;
-    const own = getOwnVisibleNudge(allChannelObjects.value, channel, actor);
-    const def = defaultNudgeEmoji.value;
-    if (own && (own.value?.emoji || '🔔') === emoji && emoji !== def) return;
-
     nudgePendingChannels.value = new Set(nudgePendingChannels.value).add(channel);
     try {
-      let postNew = true;
-      if (own) {
-        const key = nudgeObjectKey(own);
-        nudgeTombstonedObjectUrls.value = new Set(nudgeTombstonedObjectUrls.value).add(key);
-        await nextTick();
-        try {
-          await graffiti.delete(own.url, session.value);
-        } catch (err) {
-          const nextT = new Set(nudgeTombstonedObjectUrls.value);
-          nextT.delete(key);
-          nudgeTombstonedObjectUrls.value = nextT;
-          throw err;
-        }
-        if (emoji === def) postNew = false;
-      }
-      if (postNew) {
-        await graffiti.post(
-          {
-            value: {
-              activity: 'Send',
-              type: 'Nudge',
-              emoji,
-              published: Date.now(),
-            },
-            channels: [channel],
+      await graffiti.post(
+        {
+          value: {
+            activity: 'Send',
+            type: 'Nudge',
+            emoji,
+            published: Date.now(),
           },
-          session.value
-        );
-      }
+          channels: [channel],
+        },
+        session.value
+      );
       await pollChannelObjects();
       await nextTick();
       await new Promise(r => {
@@ -847,7 +825,7 @@ function useChatPageState() {
   const chatItems = computed(() => {
     if (!activeChat.value) return [];
     const ch = activeChat.value.channel;
-    const sorted = s.allChannelObjects.value
+    return s.allChannelObjects.value
       .filter(obj => {
         if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
         if (!obj.channels?.includes(ch)) return false;
@@ -861,20 +839,6 @@ function useChatPageState() {
         return false;
       })
       .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
-
-    const latestNudgeByActor = new Map();
-    for (const item of sorted) {
-      if (item.value?.type !== 'Nudge') continue;
-      const ak = canonicalActorId(item.actor);
-      const pub = item.value?.published || 0;
-      const prev = latestNudgeByActor.get(ak);
-      if (!prev || pub > (prev.value?.published || 0)) latestNudgeByActor.set(ak, item);
-    }
-    return sorted.filter(item => {
-      if (item.value?.type !== 'Nudge') return true;
-      const ak = canonicalActorId(item.actor);
-      return latestNudgeByActor.get(ak) === item;
-    });
   });
 
   const activeChatVisibleNudge = computed(() => {

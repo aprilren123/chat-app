@@ -327,7 +327,7 @@
               v-if="showNudgeEmojiPicker"
               class="nudge-emoji-picker"
               role="listbox"
-              aria-label="Nudge emoji"
+              aria-label="One-time nudge emoji"
               @click.stop
             >
               <button
@@ -335,7 +335,7 @@
                 :key="e"
                 type="button"
                 class="nudge-emoji-option"
-                :title="(activeChat && ownVisibleNudgeMap[activeChat.channel]) ? (e === defaultNudgeEmoji ? 'Undo nudge' : ('Change nudge to ' + e)) : ('Send nudge with ' + e)"
+                :title="'Send a nudge with ' + e + ' (this time only)'"
                 @click="pickOneOffNudgeEmoji(e)"
               >
                 {{ e }}
@@ -354,9 +354,9 @@
               <button
                 type="button"
                 class="nudge-picker-chevron"
-                :disabled="isChatNudgePending(activeChat.channel)"
-                title="Pick nudge emoji (one row per person; your saved default clears your nudge)"
-                aria-label="Pick nudge emoji. Another emoji updates your nudge; your default emoji undoes it"
+                :disabled="isChatNudgePending(activeChat.channel) || !!activeChatVisibleNudge"
+                :title="activeChatVisibleNudge ? 'Clear the nudge first to pick a different emoji' : 'Choose a different emoji for this nudge only'"
+                :aria-label="activeChatVisibleNudge ? 'Emoji list disabled while this chat has an active nudge' : 'Choose a different emoji for this nudge only. Does not change the default in Settings'"
                 @click.stop="openComposerNudgeEmojiPicker"
               >
                 ▾

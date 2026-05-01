@@ -742,6 +742,15 @@ a.chat-row.chat-row--active .chat-title {
     background: #dde4f0;
 }
 
+.nudge-picker-chevron:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.nudge-picker-chevron:disabled:hover {
+    background: #e8ecf3;
+}
+
 input {
     width: 100%;
     border: 1px solid var(--border);
