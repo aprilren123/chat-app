@@ -56,13 +56,27 @@
   </script>
 
   <script type="text/x-template" id="layout-template">
-    <div class="app-frame">
-      <aside class="sidebar">
+    <div class="app-frame" :class="{ 'app-frame--mobile-drawer-open': mobileSidebarOpen }">
+      <div
+        class="sidebar-backdrop"
+        aria-hidden="true"
+        @click="closeMobileSidebar"
+      />
+      <aside id="app-sidebar" class="sidebar">
+        <div class="sidebar-mobile-header">
+          <button
+            type="button"
+            class="ghost-button sidebar-mobile-done"
+            @click="closeMobileSidebar"
+          >
+            Done
+          </button>
+        </div>
         <div class="sidebar-brand">
           <p class="mini-label">Messages</p>
           <div class="sidebar-title-row">
             <h1>
-              <router-link class="sidebar-title-link" to="/">Nudge Chat</router-link>
+              <router-link class="sidebar-title-link" to="/" @click="closeMobileSidebar">Nudge Chat</router-link>
             </h1>
             <button type="button" class="ghost-button" @click="$graffiti.logout($graffitiSession.value)">
               Log out
@@ -70,32 +84,64 @@
           </div>
         </div>
 
-        <section class="new-chat-card">
-          <label for="chat-title" class="section-label">New conversation</label>
-          <div class="new-chat-row">
-            <input
-              id="chat-title"
-              v-model.trim="newChatTitle"
-              type="text"
-              placeholder="Chat title"
-              @keyup="$event.key === 'Enter' && createChat()"
-            />
-            <button class="primary-button" type="button" @click="createChat" :disabled="isCreatingChat">
-              {{ isCreatingChat ? 'Creating...' : 'Create' }}
-            </button>
-          </div>
+        <section class="new-chat-card" :class="{ 'new-chat-card--collapsed': !newChatCardExpanded }">
+          <button
+            type="button"
+            id="new-chat-card-toggle"
+            class="new-chat-card-toggle"
+            :class="{ 'new-chat-card-toggle--open': newChatCardExpanded }"
+            :aria-expanded="newChatCardExpanded"
+            aria-controls="new-chat-card-panel"
+            @click="toggleNewChatCard"
+          >
+            <span class="new-chat-card-toggle-icon" aria-hidden="true">{{
+              newChatCardExpanded ? '▾' : '+'
+            }}</span>
+            <span>{{ newChatCardExpanded ? 'Collapse' : 'New conversation' }}</span>
+          </button>
+          <div
+            v-show="newChatCardExpanded"
+            id="new-chat-card-panel"
+            class="new-chat-card-panel"
+            role="region"
+            aria-labelledby="new-chat-card-toggle"
+          >
+            <label for="chat-title" class="section-label">Create new chat</label>
+            <div class="new-chat-row">
+              <input
+                id="chat-title"
+                v-model.trim="newChatTitle"
+                type="text"
+                placeholder="Chat title"
+                @keyup="$event.key === 'Enter' && createChat()"
+              />
+              <button class="primary-button" type="button" @click="createChat" :disabled="isCreatingChat">
+                {{ isCreatingChat ? 'Creating...' : 'Create' }}
+              </button>
+            </div>
 
-          <label for="join-chat-channel" class="section-label" style="margin-top: 10px;">Join channel</label>
-          <div class="new-chat-row">
-            <input
-              id="join-chat-channel"
-              v-model.trim="joinChatChannel"
-              type="text"
-              placeholder="Channel ID"
-            />
-            <button class="primary-button" type="button" @click="joinChatByChannel" :disabled="isJoiningChat">
-              {{ isJoiningChat ? 'Joining...' : 'Join' }}
-            </button>
+            <label
+              for="join-chat-invite"
+              class="section-label join-chat-field-label"
+              style="margin-top: 10px;"
+              :title="joinChatInviteLinkTooltip"
+            >
+              Join chat
+            </label>
+            <div class="new-chat-row">
+              <input
+                id="join-chat-invite"
+                v-model.trim="joinChatChannel"
+                type="text"
+                placeholder="Paste chat invite link"
+                autocomplete="off"
+                aria-label="Paste chat invite link"
+                @keyup.enter="joinChatByChannel"
+              />
+              <button type="button" class="primary-button" @click="joinChatByChannel" :disabled="isJoiningChat">
+                {{ isJoiningChat ? 'Joining...' : 'Join' }}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -165,10 +211,11 @@
                   :href="href"
                   class="chat-row"
                   :class="{ 'chat-row--active': isExactActive }"
+                  :aria-current="isExactActive ? 'page' : undefined"
                   @click="onChatRowClick($event, { navigate, isExactActive })"
                 >
                   <span class="chat-title">{{ chat.title }}</span>
-                  <span class="chat-preview">Open conversation</span>
+                  <span class="chat-row-chevron" aria-hidden="true">›</span>
                 </a>
               </router-link>
               <NudgeButton
@@ -197,12 +244,34 @@
         </section>
 
         <div class="sidebar-footer">
-          <router-link class="ghost-button sidebar-link-button" to="/settings">Settings</router-link>
+          <router-link
+            class="ghost-button sidebar-link-button"
+            to="/settings"
+            @click="closeMobileSidebar"
+          >
+            Settings
+          </router-link>
         </div>
       </aside>
 
       <main class="chat-panel">
-        <router-view />
+        <header class="mobile-chrome-bar">
+          <button
+            type="button"
+            class="ghost-button mobile-menu-btn"
+            aria-label="Open chats list"
+            title="Chats"
+            :aria-expanded="mobileSidebarOpen"
+            aria-controls="app-sidebar"
+            @click="openMobileSidebar"
+          >
+            ☰
+          </button>
+          <span class="mobile-chrome-title">Chats</span>
+        </header>
+        <div class="chat-panel-router-host">
+          <router-view />
+        </div>
       </main>
     </div>
   </script>
@@ -241,7 +310,12 @@
             class="chat-header-title-row"
             :class="{ 'chat-header-title-row--has-nudge': activeChatVisibleNudge }"
           >
-            <h2 class="chat-header-title">{{ activeChat.title }}</h2>
+            <div
+              class="chat-header-title-strip"
+              :class="{ 'chat-header-title-strip--squeeze': activeChatVisibleNudge }"
+            >
+              <h2 class="chat-header-title">{{ activeChat.title }}</h2>
+            </div>
             <p
               v-if="activeChatVisibleNudge"
               class="chat-nudge-status"
@@ -265,19 +339,125 @@
               </span>
             </p>
           </div>
+          <div class="chat-header-actions">
+            <button
+              type="button"
+              class="ghost-button chat-header-action-btn chat-header-invite-copy"
+              :title="
+                inviteLinkJustCopied
+                  ? 'Copied to clipboard'
+                  : copyChatInviteLinkButtonTooltip
+              "
+              @click="copyActiveChatInviteLink"
+            >
+              {{ inviteLinkJustCopied ? 'Copied!' : 'Copy invite link' }}
+            </button>
+            <template v-if="!renameChatOpen">
+              <button type="button" class="ghost-button chat-header-action-btn" @click="openRenameChat">
+                Rename
+              </button>
+              <button
+                type="button"
+                class="ghost-button chat-header-action-btn chat-header-action-leave"
+                @click="confirmLeaveChat"
+              >
+                Leave
+              </button>
+            </template>
+          </div>
+          <div v-if="renameChatOpen" class="chat-header-rename-panel">
+            <label class="mini-label" for="rename-chat-input">Conversation title</label>
+            <div class="chat-header-rename-row">
+              <input
+                id="rename-chat-input"
+                v-model.trim="renameChatDraft"
+                type="text"
+                maxlength="160"
+                class="chat-header-rename-input"
+                autocomplete="off"
+                @keyup.enter="submitRenameChat"
+              />
+              <button
+                type="button"
+                class="primary-button chat-header-rename-save"
+                :disabled="renameChatSaving || !renameChatDraft.trim()"
+                @click="submitRenameChat"
+              >
+                {{ renameChatSaving ? 'Saving…' : 'Save' }}
+              </button>
+              <button
+                type="button"
+                class="ghost-button"
+                :disabled="renameChatSaving"
+                @click="cancelRenameChat"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </header>
+
+        <div class="chat-route-body">
+        <section
+          v-if="nudgeReadTimelineItems.length"
+          class="nudge-reads-panel"
+          aria-label="Nudges read history"
+        >
+          <button
+            type="button"
+            id="nudge-reads-panel-toggle"
+            class="nudge-reads-panel-toggle"
+            :aria-expanded="nudgeReadsPanelExpanded"
+            aria-controls="nudge-reads-panel-body"
+            @click="toggleNudgeReadsPanel"
+          >
+            <span class="nudge-reads-panel-toggle-chevron" aria-hidden="true">{{
+              nudgeReadsPanelExpanded ? '▾' : '▸'
+            }}</span>
+            <span class="nudge-reads-panel-toggle-label">
+              {{ nudgeReadTimelineItems.length }}
+              {{ nudgeReadTimelineItems.length === 1 ? 'nudge read' : 'nudges read' }}
+            </span>
+            <span class="nudge-reads-panel-toggle-action">{{ nudgeReadsPanelExpanded ? 'Hide' : 'Show' }}</span>
+          </button>
+          <div
+            v-show="nudgeReadsPanelExpanded"
+            id="nudge-reads-panel-body"
+            class="nudge-reads-panel-body"
+            role="region"
+            aria-labelledby="nudge-reads-panel-toggle"
+          >
+            <ul class="nudge-reads-panel-list">
+              <li
+                v-for="item in nudgeReadTimelineNewestFirst"
+                :key="item.url"
+                class="nudge-reads-panel-row"
+              >
+                <span class="nudge-reads-panel-emoji">{{ item.value.emoji || '🔔' }}</span>
+                <span class="nudge-reads-panel-meta">
+                  {{ displayActor(item.actor) }} · {{ formatTime(item.value.published) }}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </section>
 
         <section class="messages-area">
           <div v-if="isLoadingMessages" class="empty-state">
             Loading messages...
           </div>
 
-          <div v-else-if="chatItems.length === 0" class="empty-state">
-            No messages yet. Start the conversation or send a nudge.
+          <div v-else-if="chatThreadDisplayItems.length === 0" class="empty-state">
+            <template v-if="nudgeReadTimelineItems.length">
+              No messages yet. Say something to start the thread.
+            </template>
+            <template v-else>
+              No messages yet. Start the conversation or send a nudge.
+            </template>
           </div>
 
           <div
-            v-for="item in chatItems"
+            v-for="item in chatThreadDisplayItems"
             :key="item.url"
             class="message-row"
             :class="messageRowClass(item)"
@@ -335,6 +515,7 @@
             </div>
           </div>
         </section>
+        </div>
 
         <footer class="composer">
           <input

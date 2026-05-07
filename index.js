@@ -29,6 +29,10 @@ function joinedChatsStorageKey(actor) {
   return `nudge-joined-chats:${actor || 'anon'}`;
 }
 
+function leftChatsStorageKey(actor) {
+  return `nudge-left-chats:${actor || 'anon'}`;
+}
+
 const NUDGE_EMOJI_STORAGE_KEY = 'nudge-default-emoji';
 const NUDGE_VISIBLE_MS = 24 * 60 * 60 * 1000;
 const NUDGE_POP_ANIMATION_MS = 1800;
@@ -36,6 +40,12 @@ const NUDGE_POP_OUT_ANIMATION_MS = 260;
 const NUDGE_BANNER_URGENT_MS = 60 * 60 * 1000;
 const TYPING_SIGNAL_TTL_MS = 3500;
 const TYPING_SIGNAL_THROTTLE_MS = 1200;
+
+const JOIN_CHAT_INVITE_LINK_TOOLTIP =
+  'In an open conversation, tap Copy invite link beside the title—you can send that chat invite link so others join. Paste a chat invite link here.';
+
+const COPY_CHAT_INVITE_LINK_BUTTON_TOOLTIP =
+  'Copies this chat invite link so you can send it for others to join.';
 
 const NUDGE_EMOJI_PRESETS = [
   '🔔', '👋', '✨', '❤️', '🎉', '⚡️', '🔕', '🙌', '💬', '👀', '🤔', '⭐️', '🫶', '💥',
@@ -105,8 +115,16 @@ function buildResolvedNudgeUrlSet(objects, channel) {
 
 function normalizeChannelInput(raw) {
   if (!raw) return '';
-  const t = raw.trim();
+  let t = raw.trim();
   if (!t) return '';
+  const fromChatPath = /\/chat\/([^/?#]+)/.exec(t);
+  if (fromChatPath?.[1]) {
+    try {
+      return decodeURIComponent(fromChatPath[1]);
+    } catch {
+      return fromChatPath[1];
+    }
+  }
   try {
     return decodeURIComponent(t);
   } catch {
@@ -140,10 +158,12 @@ function createNudgeState() {
 
   const newChatTitle = ref('');
   const joinChatChannel = ref('');
+  const newChatCardExpanded = ref(true);
   const draftMessage = ref('');
 
   const defaultNudgeEmoji = ref(loadSavedNudgeEmoji());
   const joinedChats = ref([]);
+  const leftChatChannels = ref([]);
   const isJoiningChat = ref(false);
   const listResortNonce = ref(0);
   const channelListOrderTouch = ref(/** @type {Record<string, number>} */ ({}));
@@ -160,6 +180,7 @@ function createNudgeState() {
       actorHandleCache.value = {};
       if (!actor) {
         joinedChats.value = [];
+        leftChatChannels.value = [];
         return;
       }
       try {
@@ -170,6 +191,15 @@ function createNudgeState() {
           : [];
       } catch {
         joinedChats.value = [];
+      }
+      try {
+        const rawLeft = localStorage.getItem(leftChatsStorageKey(actor));
+        const parsedLeft = rawLeft ? JSON.parse(rawLeft) : [];
+        leftChatChannels.value = Array.isArray(parsedLeft)
+          ? parsedLeft.filter(c => typeof c === 'string' && String(c).trim())
+          : [];
+      } catch {
+        leftChatChannels.value = [];
       }
     },
     { immediate: true }
@@ -183,6 +213,20 @@ function createNudgeState() {
     } catch {
       /* ignore */
     }
+  }
+
+  function saveLeftChatChannels() {
+    const actor = session.value?.actor;
+    if (!actor) return;
+    try {
+      localStorage.setItem(leftChatsStorageKey(actor), JSON.stringify(leftChatChannels.value));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function toggleNewChatCard() {
+    newChatCardExpanded.value = !newChatCardExpanded.value;
   }
 
   function setDefaultNudgeEmoji(emoji) {
@@ -224,9 +268,12 @@ function createNudgeState() {
 
   const chats = computed(() => {
     void listResortNonce.value;
+    void leftChatChannels.value;
     const touches = channelListOrderTouch.value;
+    const leftHidden = new Set(leftChatChannels.value);
     const owned = chatObjects.value
       .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
+      .filter(obj => !leftHidden.has(obj.value?.channel))
       .map(obj => ({
         ...obj.value,
         url: obj.url,
@@ -253,6 +300,7 @@ function createNudgeState() {
       }
     }
     for (const jc of joinedChats.value) {
+      if (leftHidden.has(jc.channel)) continue;
       if (byChannel.has(jc.channel)) continue;
       const sharedTitle = titleByChannel[jc.channel]?.title;
       byChannel.set(jc.channel, {
@@ -287,35 +335,33 @@ function createNudgeState() {
     });
   });
 
+  const channelIdsForPoll = computed(() => {
+    if (!session.value?.actor) return [];
+    const left = new Set(leftChatChannels.value);
+    const ids = new Set(
+      chatObjects.value
+        .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
+        .map(obj => obj.value?.channel)
+        .filter(Boolean)
+    );
+    for (const jc of joinedChats.value) {
+      const ch = jc.channel;
+      if (ch && !left.has(ch)) ids.add(ch);
+    }
+    return [...ids];
+  });
+
   const { objects: allChannelObjects, isFirstPoll: isLoadingMessages, poll: pollChannelObjects } =
     useGraffitiDiscover(
-      () =>
-        session.value?.actor
-          ? [
-              ...new Set([
-                ...chatObjects.value
-                  .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
-                  .map(obj => obj.value?.channel)
-                  .filter(Boolean),
-                ...joinedChats.value.map(c => c.channel).filter(Boolean),
-              ]),
-            ]
-          : [],
+      () => channelIdsForPoll.value,
       {},
       session,
       true
     );
 
   const discoverChannelIdsKey = computed(() => {
-    if (!session.value?.actor) return '';
-    const ids = new Set([
-      ...chatObjects.value
-        .filter(obj => obj.value?.activity === 'Create' && obj.value?.type === 'Chat')
-        .map(obj => obj.value?.channel)
-        .filter(Boolean),
-      ...joinedChats.value.map(c => c.channel).filter(Boolean),
-    ]);
-    if (ids.size === 0) return '';
+    const ids = channelIdsForPoll.value;
+    if (ids.length === 0) return '';
     return [...ids].sort().join('\0');
   });
 
@@ -416,6 +462,8 @@ function createNudgeState() {
       );
 
       touchConversationListOrder(chatChannel);
+      leftChatChannels.value = leftChatChannels.value.filter(c => c !== chatChannel);
+      saveLeftChatChannels();
       newChatTitle.value = '';
       await loadChats();
       await pollChannelObjects();
@@ -437,6 +485,8 @@ function createNudgeState() {
         { channel, published: Date.now() },
       ];
       joinedChats.value = next;
+      leftChatChannels.value = leftChatChannels.value.filter(c => c !== channel);
+      saveLeftChatChannels();
       saveJoinedChats();
       joinChatChannel.value = '';
       await graffiti.post(
@@ -457,6 +507,96 @@ function createNudgeState() {
     } finally {
       isJoiningChat.value = false;
     }
+  }
+
+  function resolveChatRowForChannel(channel) {
+    const ch = String(channel || '').trim();
+    if (!ch || !session.value?.actor) return null;
+
+    const titleByChannel = Object.create(null);
+    for (const o of allChannelObjects.value || []) {
+      if (o?.value?.type !== 'ChatTitle') continue;
+      const p = o.value?.published ?? 0;
+      for (const cch of o.channels || []) {
+        const prev = titleByChannel[cch];
+        if (!prev || p > prev.published) {
+          titleByChannel[cch] = { title: o.value?.title, published: p };
+        }
+      }
+    }
+
+    const owned = chatObjects.value.find(
+      obj =>
+        obj.value?.activity === 'Create' &&
+        obj.value?.type === 'Chat' &&
+        obj.value?.channel === ch
+    );
+    if (owned?.value) {
+      const base = owned.value;
+      const overlay = titleByChannel[ch]?.title;
+      return {
+        ...base,
+        title: overlay || base.title,
+        url: owned.url,
+        actor: owned.actor,
+      };
+    }
+
+    const jc = joinedChats.value.find(c => c.channel === ch);
+    if (jc) {
+      const sharedTitle = titleByChannel[ch]?.title;
+      return {
+        activity: 'Join',
+        type: 'Chat',
+        title: sharedTitle || `Joined ${ch.slice(0, 8)}`,
+        channel: ch,
+        published: jc.published || Date.now(),
+        url: `joined:${ch}`,
+        actor: session.value.actor,
+      };
+    }
+
+    return null;
+  }
+
+  async function leaveChat(channel) {
+    const ch = String(channel || '').trim();
+    if (!session.value || !ch) return;
+    if (!leftChatChannels.value.includes(ch)) {
+      leftChatChannels.value = [...leftChatChannels.value, ch];
+      saveLeftChatChannels();
+    }
+    joinedChats.value = joinedChats.value.filter(c => c.channel !== ch);
+    saveJoinedChats();
+    listResortNonce.value++;
+    await pollChannelObjects();
+    const rid = router.currentRoute.value.params.chatId;
+    const routeChat = typeof rid === 'string' && rid ? decodeURIComponent(rid) : '';
+    if (routeChat === ch) {
+      await router.push('/');
+    }
+  }
+
+  async function renameChatChannel(channel, rawTitle) {
+    const ch = String(channel || '').trim();
+    const title = String(rawTitle || '').trim();
+    if (!session.value || !ch || !title) return;
+    if (title.length > 160) return;
+
+    await graffiti.post(
+      {
+        value: {
+          activity: 'Create',
+          type: 'ChatTitle',
+          title,
+          published: Date.now(),
+        },
+        channels: [ch],
+      },
+      session.value
+    );
+    touchConversationListOrder(ch);
+    await pollChannelObjects();
   }
 
   async function sendMessageToChannel(channel) {
@@ -964,9 +1104,16 @@ function createNudgeState() {
     nudgeEmojiPresets: NUDGE_EMOJI_PRESETS,
     setDefaultNudgeEmoji,
     joinChatChannel,
+    newChatCardExpanded,
+    toggleNewChatCard,
     isJoiningChat,
+    joinChatInviteLinkTooltip: JOIN_CHAT_INVITE_LINK_TOOLTIP,
+    copyChatInviteLinkButtonTooltip: COPY_CHAT_INVITE_LINK_BUTTON_TOOLTIP,
     createChat,
     joinChatByChannel,
+    leaveChat,
+    renameChatChannel,
+    resolveChatRowForChannel,
     sendMessageToChannel,
     sendNudgeToChat,
     ownLatestNudgeForChannel,
@@ -1007,10 +1154,43 @@ function useChatPageState() {
     const raw = route.params.chatId;
     if (typeof raw !== 'string' || !raw) return null;
     const id = decodeURIComponent(raw);
-    return s.chats.value.find(c => c.channel === id) || null;
+    return s.resolveChatRowForChannel(id);
   });
 
   const nowTick = ref(Date.now());
+
+  const inviteLinkJustCopied = ref(false);
+  let inviteLinkCopiedTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+
+  async function copyActiveChatInviteLink() {
+    if (!activeChat.value?.channel || typeof window === 'undefined') return;
+    const channel = activeChat.value.channel;
+    const url = `${window.location.origin}${window.location.pathname}#/chat/${encodeURIComponent(channel)}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      inviteLinkJustCopied.value = true;
+      if (inviteLinkCopiedTimer != null) clearTimeout(inviteLinkCopiedTimer);
+      inviteLinkCopiedTimer = window.setTimeout(() => {
+        inviteLinkJustCopied.value = false;
+        inviteLinkCopiedTimer = null;
+      }, 2200);
+    } catch {
+      /* Clipboard unavailable or denied */
+    }
+  }
 
   const resolvedNudgeUrls = computed(() =>
     buildResolvedNudgeUrlSet(s.allChannelObjects.value, activeChat.value?.channel || '')
@@ -1034,6 +1214,22 @@ function useChatPageState() {
       })
       .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
   });
+
+  const chatThreadDisplayItems = computed(() =>
+    chatItems.value.filter(item => item.value?.type !== 'NudgeRead')
+  );
+
+  const nudgeReadTimelineItems = computed(() =>
+    chatItems.value.filter(item => item.value?.type === 'NudgeRead')
+  );
+
+  const nudgeReadTimelineNewestFirst = computed(() => [...nudgeReadTimelineItems.value].reverse());
+
+  const nudgeReadsPanelExpanded = ref(false);
+
+  function toggleNudgeReadsPanel() {
+    nudgeReadsPanelExpanded.value = !nudgeReadsPanelExpanded.value;
+  }
 
   const activeChatVisibleNudge = computed(() => {
     void nowTick.value;
@@ -1132,12 +1328,17 @@ function useChatPageState() {
   });
   onUnmounted(() => {
     if (nudgeBannerTimer) clearInterval(nudgeBannerTimer);
+    if (inviteLinkCopiedTimer != null) clearTimeout(inviteLinkCopiedTimer);
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', pollMessagesIfTabVisible);
     }
   });
 
   const showNudgeEmojiPicker = ref(false);
+
+  const renameChatOpen = ref(false);
+  const renameChatDraft = ref('');
+  const renameChatSaving = ref(false);
 
   watch(
     () => {
@@ -1154,6 +1355,9 @@ function useChatPageState() {
     () => activeChat.value?.channel,
     async () => {
       showNudgeEmojiPicker.value = false;
+      renameChatOpen.value = false;
+      renameChatDraft.value = '';
+      nudgeReadsPanelExpanded.value = false;
       await nextTick();
       s.scrollMessagesToBottom();
     }
@@ -1215,14 +1419,64 @@ function useChatPageState() {
     await s.readOthersVisibleNudge(activeChat.value.channel, item);
   }
 
+  function openRenameChat() {
+    if (!activeChat.value) return;
+    renameChatDraft.value = activeChat.value.title || '';
+    renameChatOpen.value = true;
+  }
+
+  function cancelRenameChat() {
+    renameChatOpen.value = false;
+  }
+
+  async function submitRenameChat() {
+    if (!activeChat.value) return;
+    const title = renameChatDraft.value.trim();
+    if (!title) return;
+    renameChatSaving.value = true;
+    try {
+      await s.renameChatChannel(activeChat.value.channel, title);
+      renameChatOpen.value = false;
+    } finally {
+      renameChatSaving.value = false;
+    }
+  }
+
+  async function confirmLeaveChat() {
+    if (!activeChat.value) return;
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        'Leave this conversation? It will disappear from your list on this device. Others are not removed.'
+      )
+    ) {
+      return;
+    }
+    await s.leaveChat(activeChat.value.channel);
+  }
+
   return {
     activeChat,
     chatItems,
+    chatThreadDisplayItems,
+    nudgeReadTimelineItems,
+    nudgeReadTimelineNewestFirst,
+    nudgeReadsPanelExpanded,
+    toggleNudgeReadsPanel,
     resolvedNudgeUrls,
     activeChatVisibleNudge,
     activeChatLatestNudge,
     composerNudgeButtonEmoji,
     isComposerEmojiChevronDisabled,
+    inviteLinkJustCopied,
+    copyActiveChatInviteLink,
+    renameChatOpen,
+    renameChatDraft,
+    renameChatSaving,
+    openRenameChat,
+    cancelRenameChat,
+    submitRenameChat,
+    confirmLeaveChat,
     showTypingIndicator,
     showOwnTypingIndicator,
     showOtherTypingIndicator,
@@ -1242,14 +1496,50 @@ const MainLayout = {
   setup() {
     const s = useNudgeStore();
     const router = useRouter();
+    const route = useRoute();
+
+    const mobileSidebarOpen = ref(false);
+
+    function openMobileSidebar() {
+      mobileSidebarOpen.value = true;
+    }
+
+    function closeMobileSidebar() {
+      mobileSidebarOpen.value = false;
+    }
+
+    watch(
+      () => route.fullPath,
+      () => {
+        mobileSidebarOpen.value = false;
+      }
+    );
+
+    function onDrawerEscape(e) {
+      if (e.key === 'Escape') closeMobileSidebar();
+    }
+
+    watch(mobileSidebarOpen, open => {
+      if (typeof document === 'undefined') return;
+      if (open) document.addEventListener('keydown', onDrawerEscape);
+      else document.removeEventListener('keydown', onDrawerEscape);
+    });
+
+    onUnmounted(() => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('keydown', onDrawerEscape);
+      }
+    });
 
     function onChatRowClick(e, { navigate, isExactActive }) {
       if (isExactActive) {
         e.preventDefault();
         router.push('/');
+        closeMobileSidebar();
         return;
       }
       navigate(e);
+      closeMobileSidebar();
     }
 
     function nudgeEmojiForSidebarRow(chat) {
@@ -1263,6 +1553,9 @@ const MainLayout = {
 
     return {
       ...s,
+      mobileSidebarOpen,
+      openMobileSidebar,
+      closeMobileSidebar,
       onChatRowClick,
       nudgeEmojiForSidebarRow,
     };
