@@ -81,33 +81,42 @@ function nudgeObjectKey(obj) {
   return `${obj.url}|${obj.actor || ''}|${obj.value?.published || 0}`;
 }
 
-function buildResolvedNudgeUrlSet(objects, channel) {
-  const resolved = new Set();
-  if (!channel || !objects?.length) return resolved;
-  const events = objects
+function channelNudgeAndReadEvents(objects, channel) {
+  if (!channel || !objects?.length) return [];
+  return objects
     .filter(
       o =>
         o?.channels?.includes(channel) &&
         (o.value?.type === 'Nudge' || o.value?.type === 'NudgeRead')
     )
     .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
+}
 
+function findNudgePairedWithRead(sortedEvents, readItem) {
+  if (readItem?.value?.type !== 'NudgeRead') return null;
+  const pr = readItem.value?.published ?? 0;
+  const readActor = canonicalActorId(readItem.actor);
+  let best = null;
+  let bestPub = -1;
+  for (const o of sortedEvents) {
+    if (o.value?.type !== 'Nudge') continue;
+    const pub = o.value?.published ?? 0;
+    if (pub >= pr) continue;
+    if (canonicalActorId(o.actor) === readActor) continue;
+    if (pub > bestPub) {
+      bestPub = pub;
+      best = o;
+    }
+  }
+  return best;
+}
+
+function buildResolvedNudgeUrlSet(objects, channel) {
+  const resolved = new Set();
+  const events = channelNudgeAndReadEvents(objects, channel);
   for (const item of events) {
     if (item.value?.type !== 'NudgeRead') continue;
-    const pr = item.value?.published ?? 0;
-    const readActor = canonicalActorId(item.actor);
-    let best = null;
-    let bestPub = -1;
-    for (const o of events) {
-      if (o.value?.type !== 'Nudge') continue;
-      const pub = o.value?.published ?? 0;
-      if (pub >= pr) continue;
-      if (canonicalActorId(o.actor) === readActor) continue;
-      if (pub > bestPub) {
-        bestPub = pub;
-        best = o;
-      }
-    }
+    const best = findNudgePairedWithRead(events, item);
     if (best?.url) resolved.add(best.url);
   }
   return resolved;
@@ -1230,7 +1239,23 @@ function useChatPageState() {
       .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
   });
 
-  const nudgeReadTimelineNewestFirst = computed(() => [...nudgeReadTimelineItems.value].reverse());
+  const nudgeReadPanelRows = computed(() => {
+    if (!activeChat.value) return [];
+    const ch = activeChat.value.channel;
+    const objects = s.allChannelObjects.value || [];
+    const events = channelNudgeAndReadEvents(objects, ch);
+    const reads = nudgeReadTimelineItems.value;
+    return [...reads].reverse().map(readItem => {
+      const nudge = findNudgePairedWithRead(events, readItem);
+      return {
+        key: readItem.url,
+        emoji: readItem.value?.emoji || nudge?.value?.emoji || '🔔',
+        senderActor: nudge?.actor ?? null,
+        readerActor: readItem.actor,
+        published: readItem.value?.published ?? 0,
+      };
+    });
+  });
 
   const nudgeReadsPanelExpanded = ref(false);
 
@@ -1467,7 +1492,7 @@ function useChatPageState() {
     chatItems,
     chatThreadDisplayItems,
     nudgeReadTimelineItems,
-    nudgeReadTimelineNewestFirst,
+    nudgeReadPanelRows,
     nudgeReadsPanelExpanded,
     toggleNudgeReadsPanel,
     resolvedNudgeUrls,

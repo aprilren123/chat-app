@@ -523,6 +523,32 @@ a.chat-row.chat-row--active .chat-row-chevron {
     color: var(--danger-text, #b42318);
 }
 
+.chat-header-actions .ghost-button {
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chat-header-actions .ghost-button:hover {
+    transform: none;
+    background: rgba(10, 132, 255, 0.12);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.chat-header-actions .ghost-button:focus-visible {
+    transform: none;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.28);
+}
+
+.chat-header-actions .ghost-button.chat-header-action-leave:hover {
+    background: rgba(180, 35, 24, 0.1);
+    color: var(--danger-text, #b42318);
+    box-shadow: 0 1px 2px rgba(180, 35, 24, 0.08);
+}
+
+.chat-header-actions .ghost-button.chat-header-action-leave:focus-visible {
+    box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.22);
+}
+
 .chat-header-rename-panel {
     margin-top: 12px;
     width: 100%;

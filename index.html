@@ -428,13 +428,15 @@
           >
             <ul class="nudge-reads-panel-list">
               <li
-                v-for="item in nudgeReadTimelineNewestFirst"
-                :key="item.url"
+                v-for="row in nudgeReadPanelRows"
+                :key="row.key"
                 class="nudge-reads-panel-row"
               >
-                <span class="nudge-reads-panel-emoji">{{ item.value.emoji || '🔔' }}</span>
+                <span class="nudge-reads-panel-emoji">{{ row.emoji }}</span>
                 <span class="nudge-reads-panel-meta">
-                  {{ displayActor(item.actor) }} · {{ formatTime(item.value.published) }}
+                  Sent by {{ row.senderActor != null ? displayActor(row.senderActor) : 'Unknown' }} ·
+                  Read by {{ displayActor(row.readerActor) }} ·
+                  {{ formatTime(row.published) }}
                 </span>
               </li>
             </ul>
