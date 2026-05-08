@@ -1014,12 +1014,12 @@ a.chat-row.chat-row--active .chat-row-chevron {
 
 .nudge-reads-panel-row {
     display: flex;
-    align-items: baseline;
+    align-items: flex-start;
     gap: 8px;
-    padding: 5px 8px;
+    padding: 8px 8px;
     border-radius: 10px;
     font-size: 0.8rem;
-    line-height: 1.35;
+    line-height: 1.4;
     color: var(--muted);
 }
 
@@ -1033,8 +1033,28 @@ a.chat-row.chat-row--active .chat-row-chevron {
     line-height: 1;
 }
 
-.nudge-reads-panel-meta {
+.nudge-reads-panel-content {
     min-width: 0;
+    flex: 1;
+}
+
+.nudge-reads-panel-line {
+    margin: 0 0 4px;
+}
+
+.nudge-reads-panel-line:last-child {
+    margin-bottom: 0;
+}
+
+.nudge-reads-panel-k {
+    font-weight: 600;
+    color: var(--text);
+    margin-right: 4px;
+}
+
+.nudge-reads-panel-count {
+    font-weight: 500;
+    white-space: nowrap;
 }
 
 .composer {

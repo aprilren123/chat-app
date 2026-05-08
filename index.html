@@ -399,9 +399,9 @@
 
         <div class="chat-route-body">
         <section
-          v-if="nudgeReadTimelineItems.length"
+          v-if="nudgeHistoryPanelItems.length"
           class="nudge-reads-panel"
-          aria-label="Nudges read history"
+          aria-label="Nudge history"
         >
           <button
             type="button"
@@ -414,9 +414,7 @@
             <span class="nudge-reads-panel-toggle-chevron" aria-hidden="true">{{
               nudgeReadsPanelExpanded ? '▾' : '▸'
             }}</span>
-            <span class="nudge-reads-panel-toggle-label">
-              {{ 'Nudges read' }}
-            </span>
+            <span class="nudge-reads-panel-toggle-label">Nudge history</span>
             <span class="nudge-reads-panel-toggle-action">{{ nudgeReadsPanelExpanded ? 'Hide' : 'Show' }}</span>
           </button>
           <div
@@ -428,16 +426,31 @@
           >
             <ul class="nudge-reads-panel-list">
               <li
-                v-for="row in nudgeReadPanelRows"
+                v-for="row in nudgeHistoryPanelItems"
                 :key="row.key"
                 class="nudge-reads-panel-row"
               >
                 <span class="nudge-reads-panel-emoji">{{ row.emoji }}</span>
-                <span class="nudge-reads-panel-meta">
-                  Sent by {{ row.senderActor != null ? displayActor(row.senderActor) : 'Unknown' }} ·
-                  Read by {{ displayActor(row.readerActor) }} ·
-                  {{ formatTime(row.published) }}
-                </span>
+                <div class="nudge-reads-panel-content">
+                  <p class="nudge-reads-panel-line">
+                    <span class="nudge-reads-panel-k">Sent:</span>
+                    {{ displayActor(row.senderActor) }} · {{ formatTime(row.sentAt) }}
+                  </p>
+                  <p class="nudge-reads-panel-line">
+                    <span class="nudge-reads-panel-k">Read by:</span>
+                    <template v-if="row.readerActors.length">
+                      <span
+                        v-for="(actor, idx) in row.readerActors"
+                        :key="actor"
+                      >{{ displayActor(actor)
+                      }}<template v-if="idx < row.readerActors.length - 1">, </template></span>
+                    </template>
+                    <template v-else>Nobody yet</template>
+                    <span class="nudge-reads-panel-count">
+                      · {{ row.readCount }}/{{ row.otherCount }} read
+                    </span>
+                  </p>
+                </div>
               </li>
             </ul>
           </div>
@@ -449,7 +462,7 @@
           </div>
 
           <div v-else-if="chatThreadDisplayItems.length === 0" class="empty-state">
-            <template v-if="nudgeReadTimelineItems.length">
+            <template v-if="nudgeHistoryPanelItems.length">
               No messages yet. Say something to start the thread.
             </template>
             <template v-else>

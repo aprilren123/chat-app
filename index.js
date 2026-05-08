@@ -1319,32 +1319,46 @@ function useChatPageState() {
 
   const chatThreadDisplayItems = computed(() => chatItems.value);
 
-  const nudgeReadTimelineItems = computed(() => {
-    if (!activeChat.value) return [];
-    const ch = activeChat.value.channel;
-    return s.allChannelObjects.value
-      .filter(obj => {
-        if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
-        if (!obj.channels?.includes(ch)) return false;
-        return obj.value?.type === 'NudgeRead';
-      })
-      .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
-  });
-
-  const nudgeReadPanelRows = computed(() => {
+  /** One row per nudge: sent time, sender, read list, x/y among other members. */
+  const nudgeHistoryPanelItems = computed(() => {
     if (!activeChat.value) return [];
     const ch = activeChat.value.channel;
     const objects = s.allChannelObjects.value || [];
     const events = channelNudgeAndReadEvents(objects, ch);
-    const reads = nudgeReadTimelineItems.value;
-    return [...reads].reverse().map(readItem => {
-      const nudge = findNudgePairedWithRead(events, readItem);
+    const nudges = objects
+      .filter(obj => {
+        if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
+        if (!obj.channels?.includes(ch)) return false;
+        return obj.value?.type === 'Nudge';
+      })
+      .sort((a, b) => (b.value?.published || 0) - (a.value?.published || 0));
+
+    return nudges.map(nudge => {
+      const sender = canonicalActorId(nudge.actor);
+      const nudgeUrl = nudge.url;
+      const readerIds = new Set();
+      for (const item of events) {
+        if (item.value?.type !== 'NudgeRead') continue;
+        const paired = findNudgePairedWithRead(events, item);
+        if (paired?.url === nudgeUrl) {
+          readerIds.add(canonicalActorId(item.actor));
+        }
+      }
+      const members = channelMembersForNudgeAck(objects, ch);
+      const others = [...members].filter(a => a && a !== sender);
+      const y = others.length;
+      const othersSet = new Set(others);
+      const readersAmongOthers = [...readerIds].filter(id => id && othersSet.has(id));
+      readersAmongOthers.sort((a, b) => a.localeCompare(b));
+      const x = readersAmongOthers.length;
       return {
-        key: readItem.url,
-        emoji: readItem.value?.emoji || nudge?.value?.emoji || '🔔',
-        senderActor: nudge?.actor ?? null,
-        readerActor: readItem.actor,
-        published: readItem.value?.published ?? 0,
+        key: nudgeUrl,
+        emoji: nudge.value?.emoji || '🔔',
+        senderActor: nudge.actor,
+        sentAt: nudge.value?.published ?? 0,
+        readerActors: readersAmongOthers,
+        readCount: x,
+        otherCount: y,
       };
     });
   });
@@ -1583,8 +1597,7 @@ function useChatPageState() {
     activeChat,
     chatItems,
     chatThreadDisplayItems,
-    nudgeReadTimelineItems,
-    nudgeReadPanelRows,
+    nudgeHistoryPanelItems,
     nudgeReadsPanelExpanded,
     toggleNudgeReadsPanel,
     resolvedNudgeUrls,
