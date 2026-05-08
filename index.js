@@ -1207,7 +1207,9 @@ function useChatPageState() {
         if (obj.value?.type === 'ChannelJoin') return true;
         if (obj.value?.type === 'Nudge') {
           const p = obj.value?.published ?? 0;
-          return Date.now() - p <= NUDGE_VISIBLE_MS;
+          if (Date.now() - p > NUDGE_VISIBLE_MS) return false;
+          if (resolvedNudgeUrls.value.has(obj.url)) return false;
+          return true;
         }
         return false;
       })
