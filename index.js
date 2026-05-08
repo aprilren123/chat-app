@@ -155,22 +155,32 @@ function isMessagePayload(value) {
   return seg === 'Message' || seg.toLowerCase() === 'message';
 }
 
-/** Actors who have participated in the channel (joins, messages, nudges, reads). */
-function channelParticipantActors(objects, channel) {
+function isChatTitlePayload(value) {
+  const t = value?.type;
+  if (t == null) return false;
+  if (typeof t !== 'string') return false;
+  const s = t.trim();
+  if (s === 'ChatTitle' || s.toLowerCase() === 'chattitle') return true;
+  const seg = s.split(/[/:#]/).filter(Boolean).pop() || '';
+  return seg === 'ChatTitle' || seg.toLowerCase() === 'chattitle';
+}
+
+/**
+ * Actors who should count as “in the conversation” for nudge read receipts.
+ * Uses every object on the channel (any type) except ephemeral/title-only noise, so
+ * namespaced joins (e.g. Send/ChannelJoin) and all members still count—not only
+ * people who already posted a NudgeRead.
+ */
+function channelMembersForNudgeAck(objects, channel) {
   const set = new Set();
   if (!channel || !objects?.length) return set;
   for (const obj of objects) {
     if (!obj?.channels?.includes(channel)) continue;
     const t = obj.value?.type;
-    if (
-      t === 'ChannelJoin' ||
-      t === 'Nudge' ||
-      t === 'NudgeRead' ||
-      isMessagePayload(obj.value)
-    ) {
-      const a = canonicalActorId(obj.actor);
-      if (a) set.add(a);
-    }
+    if (t === 'Typing') continue;
+    if (isChatTitlePayload(obj.value)) continue;
+    const a = canonicalActorId(obj.actor);
+    if (a) set.add(a);
   }
   return set;
 }
@@ -179,7 +189,7 @@ function nudgeFullyAckedByAllOthers(objects, channel, nudgeObj) {
   const sender = canonicalActorId(nudgeObj?.actor);
   const nudgeUrl = nudgeObj?.url;
   if (!sender || !nudgeUrl || !channel || !objects?.length) return false;
-  const participants = channelParticipantActors(objects, channel);
+  const participants = channelMembersForNudgeAck(objects, channel);
   const others = [...participants].filter(a => a !== sender);
   if (others.length === 0) return false;
   const events = channelNudgeAndReadEvents(objects, channel);
