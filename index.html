@@ -480,10 +480,6 @@
                 </p>
               </template>
 
-              <template v-else-if="item.value.type === 'NudgeRead'">
-                <p class="nudge-text">{{ item.value.emoji || '🔔' }} Nudge read</p>
-              </template>
-
               <template v-else-if="item.value.type === 'ChannelJoin'">
                 <p class="chat-join-text">{{ displayJoinName(item.actor) }} joined the chat</p>
                 <p class="chat-join-meta">{{ formatTime(item.value.published) }}</p>

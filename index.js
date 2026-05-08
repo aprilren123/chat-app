@@ -1204,7 +1204,6 @@ function useChatPageState() {
         if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
         if (!obj.channels?.includes(ch)) return false;
         if (isMessagePayload(obj.value)) return true;
-        if (obj.value?.type === 'NudgeRead') return true;
         if (obj.value?.type === 'ChannelJoin') return true;
         if (obj.value?.type === 'Nudge') {
           const p = obj.value?.published ?? 0;
@@ -1215,13 +1214,19 @@ function useChatPageState() {
       .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
   });
 
-  const chatThreadDisplayItems = computed(() =>
-    chatItems.value.filter(item => item.value?.type !== 'NudgeRead')
-  );
+  const chatThreadDisplayItems = computed(() => chatItems.value);
 
-  const nudgeReadTimelineItems = computed(() =>
-    chatItems.value.filter(item => item.value?.type === 'NudgeRead')
-  );
+  const nudgeReadTimelineItems = computed(() => {
+    if (!activeChat.value) return [];
+    const ch = activeChat.value.channel;
+    return s.allChannelObjects.value
+      .filter(obj => {
+        if (s.nudgeTombstonedObjectUrls.value.has(nudgeObjectKey(obj))) return false;
+        if (!obj.channels?.includes(ch)) return false;
+        return obj.value?.type === 'NudgeRead';
+      })
+      .sort((a, b) => (a.value?.published || 0) - (b.value?.published || 0));
+  });
 
   const nudgeReadTimelineNewestFirst = computed(() => [...nudgeReadTimelineItems.value].reverse());
 
