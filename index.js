@@ -111,11 +111,15 @@ function findNudgePairedWithRead(sortedEvents, readItem) {
   return best;
 }
 
-function buildResolvedNudgeUrlSet(objects, channel) {
+/** Nudge URLs this reader has dismissed (their own NudgeRead events only). */
+function buildResolvedNudgeUrlSetForReader(objects, channel, readerActor) {
+  const reader = canonicalActorId(readerActor);
   const resolved = new Set();
+  if (!reader || !channel || !objects?.length) return resolved;
   const events = channelNudgeAndReadEvents(objects, channel);
   for (const item of events) {
     if (item.value?.type !== 'NudgeRead') continue;
+    if (canonicalActorId(item.actor) !== reader) continue;
     const best = findNudgePairedWithRead(events, item);
     if (best?.url) resolved.add(best.url);
   }
@@ -149,6 +153,64 @@ function isMessagePayload(value) {
   if (s === 'Message' || s.toLowerCase() === 'message') return true;
   const seg = s.split(/[/:#]/).filter(Boolean).pop() || '';
   return seg === 'Message' || seg.toLowerCase() === 'message';
+}
+
+/** Actors who have participated in the channel (joins, messages, nudges, reads). */
+function channelParticipantActors(objects, channel) {
+  const set = new Set();
+  if (!channel || !objects?.length) return set;
+  for (const obj of objects) {
+    if (!obj?.channels?.includes(channel)) continue;
+    const t = obj.value?.type;
+    if (
+      t === 'ChannelJoin' ||
+      t === 'Nudge' ||
+      t === 'NudgeRead' ||
+      isMessagePayload(obj.value)
+    ) {
+      const a = canonicalActorId(obj.actor);
+      if (a) set.add(a);
+    }
+  }
+  return set;
+}
+
+function nudgeFullyAckedByAllOthers(objects, channel, nudgeObj) {
+  const sender = canonicalActorId(nudgeObj?.actor);
+  const nudgeUrl = nudgeObj?.url;
+  if (!sender || !nudgeUrl || !channel || !objects?.length) return false;
+  const participants = channelParticipantActors(objects, channel);
+  const others = [...participants].filter(a => a !== sender);
+  if (others.length === 0) return false;
+  const events = channelNudgeAndReadEvents(objects, channel);
+  for (const readerId of others) {
+    let found = false;
+    for (const item of events) {
+      if (item.value?.type !== 'NudgeRead') continue;
+      if (canonicalActorId(item.actor) !== readerId) continue;
+      const paired = findNudgePairedWithRead(events, item);
+      if (paired?.url === nudgeUrl) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) return false;
+  }
+  return true;
+}
+
+/** Hide a nudge row/banner for this viewer (they read it, or they sent it and everyone else has read). */
+function isNudgeHiddenFromViewer(objects, channel, nudgeObj, viewerActor) {
+  const viewer = canonicalActorId(viewerActor);
+  if (!viewer || !channel || !nudgeObj || nudgeObj.value?.type !== 'Nudge') return false;
+  if (buildResolvedNudgeUrlSetForReader(objects, channel, viewer).has(nudgeObj.url)) return true;
+  if (
+    canonicalActorId(nudgeObj.actor) === viewer &&
+    nudgeFullyAckedByAllOthers(objects, channel, nudgeObj)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function canonicalActorId(actor) {
@@ -667,16 +729,15 @@ function createNudgeState() {
   function getOwnLatestNudge(objects, channel, actor) {
     if (!actor || !channel) return null;
     const hidden = nudgeTombstonedObjectUrls.value;
-    const resolvedUrls = buildResolvedNudgeUrlSet(objects, channel);
     const mine = objects.filter(
       o =>
         o &&
         o.url &&
         !hidden.has(nudgeObjectKey(o)) &&
-        !resolvedUrls.has(o.url) &&
         o.channels?.includes(channel) &&
         o.value?.type === 'Nudge' &&
-        canonicalActorId(o.actor) === canonicalActorId(actor)
+        canonicalActorId(o.actor) === canonicalActorId(actor) &&
+        !isNudgeHiddenFromViewer(objects, channel, o, actor)
     );
     if (!mine.length) return null;
     mine.sort((a, b) => (b.value?.published || 0) - (a.value?.published || 0));
@@ -691,16 +752,15 @@ function createNudgeState() {
     return latest;
   }
 
-  function getLatestVisibleNudge(objects, channel) {
+  function getLatestVisibleNudge(objects, channel, viewerActor) {
     if (!channel) return null;
     const hidden = nudgeTombstonedObjectUrls.value;
-    const resolvedUrls = buildResolvedNudgeUrlSet(objects, channel);
     const list = objects.filter(
       o =>
         o &&
         o.url &&
         !hidden.has(nudgeObjectKey(o)) &&
-        !resolvedUrls.has(o.url) &&
+        !isNudgeHiddenFromViewer(objects, channel, o, viewerActor) &&
         o.channels?.includes(channel) &&
         o.value?.type === 'Nudge'
     );
@@ -737,6 +797,7 @@ function createNudgeState() {
   });
 
   const latestVisibleNudgeMap = computed(() => {
+    const viewer = session.value?.actor;
     const objects = allChannelObjects.value || [];
     const channelSet = new Set(chats.value.map(c => c.channel).filter(Boolean));
     for (const o of objects) {
@@ -746,7 +807,7 @@ function createNudgeState() {
     }
     const map = Object.create(null);
     for (const ch of channelSet) {
-      const n = getLatestVisibleNudge(objects, ch);
+      const n = getLatestVisibleNudge(objects, ch, viewer);
       if (n) map[ch] = n;
     }
     return map;
@@ -754,7 +815,7 @@ function createNudgeState() {
 
   function peekLatestVisibleNudge(channel) {
     if (!channel) return null;
-    return getLatestVisibleNudge(allChannelObjects.value, channel);
+    return getLatestVisibleNudge(allChannelObjects.value, channel, session.value?.actor);
   }
 
   function ownLatestNudgeForChannel(channel) {
@@ -766,7 +827,7 @@ function createNudgeState() {
 
   function isNudgeBellLockedForMe(channel) {
     if (!session.value?.actor || !channel) return false;
-    const n = getLatestVisibleNudge(allChannelObjects.value, channel);
+    const n = getLatestVisibleNudge(allChannelObjects.value, channel, session.value.actor);
     if (!n) return false;
     return canonicalActorId(n.actor) !== canonicalActorId(session.value.actor);
   }
@@ -791,10 +852,17 @@ function createNudgeState() {
     if (!session.value || !channel) return;
     if (!item || item.value?.type !== 'Nudge') return;
     if (nudgePendingChannels.value.has(channel)) return;
-    const latest = getLatestVisibleNudge(allChannelObjects.value, channel);
+    const latest = getLatestVisibleNudge(allChannelObjects.value, channel, session.value.actor);
     if (!latest || latest.url !== item.url) return;
     if (canonicalActorId(latest.actor) === canonicalActorId(session.value.actor)) return;
-    if (buildResolvedNudgeUrlSet(allChannelObjects.value, channel).has(item.url)) return;
+    if (
+      buildResolvedNudgeUrlSetForReader(
+        allChannelObjects.value,
+        channel,
+        session.value.actor
+      ).has(item.url)
+    )
+      return;
 
     nudgePendingChannels.value = new Set(nudgePendingChannels.value).add(channel);
     try {
@@ -826,7 +894,7 @@ function createNudgeState() {
   }
 
   async function readOthersNudgeFromChannel(channel) {
-    const latest = getLatestVisibleNudge(allChannelObjects.value, channel);
+    const latest = getLatestVisibleNudge(allChannelObjects.value, channel, session.value?.actor);
     if (!latest) return;
     await readOthersVisibleNudge(channel, latest);
   }
@@ -835,7 +903,7 @@ function createNudgeState() {
     if (!session.value || !channel) return;
     if (nudgePendingChannels.value.has(channel)) return;
 
-    const latest = getLatestVisibleNudge(allChannelObjects.value, channel);
+    const latest = getLatestVisibleNudge(allChannelObjects.value, channel, session.value.actor);
     if (latest && canonicalActorId(latest.actor) !== canonicalActorId(session.value.actor)) {
       return;
     }
@@ -1028,8 +1096,9 @@ function createNudgeState() {
   function isOthersNudgeTapToDismiss(item, channel) {
     if (!channel || !item || item.value?.type !== 'Nudge') return false;
     if (isOwnActor(item.actor)) return false;
-    const cur = getLatestVisibleNudge(allChannelObjects.value, channel);
-    const resolved = buildResolvedNudgeUrlSet(allChannelObjects.value, channel);
+    const me = session.value?.actor;
+    const cur = getLatestVisibleNudge(allChannelObjects.value, channel, me);
+    const resolved = buildResolvedNudgeUrlSetForReader(allChannelObjects.value, channel, me);
     return !!(cur && cur.url === item.url && !resolved.has(item.url));
   }
 
@@ -1070,7 +1139,7 @@ function createNudgeState() {
     function activeNudgeForChat(c) {
       const ch = channelKey(c);
       if (!ch) return null;
-      return getLatestVisibleNudge(objects, ch);
+      return getLatestVisibleNudge(objects, ch, me);
     }
 
     let filtered;
@@ -1158,6 +1227,7 @@ function createNudgeState() {
 function useChatPageState() {
   const s = useNudgeStore();
   const route = useRoute();
+  const pageSession = useGraffitiSession();
 
   const activeChat = computed(() => {
     const raw = route.params.chatId;
@@ -1202,7 +1272,11 @@ function useChatPageState() {
   }
 
   const resolvedNudgeUrls = computed(() =>
-    buildResolvedNudgeUrlSet(s.allChannelObjects.value, activeChat.value?.channel || '')
+    buildResolvedNudgeUrlSetForReader(
+      s.allChannelObjects.value,
+      activeChat.value?.channel || '',
+      pageSession.value?.actor
+    )
   );
 
   const chatItems = computed(() => {
@@ -1217,7 +1291,15 @@ function useChatPageState() {
         if (obj.value?.type === 'Nudge') {
           const p = obj.value?.published ?? 0;
           if (Date.now() - p > NUDGE_VISIBLE_MS) return false;
-          if (resolvedNudgeUrls.value.has(obj.url)) return false;
+          if (
+            isNudgeHiddenFromViewer(
+              s.allChannelObjects.value,
+              ch,
+              obj,
+              pageSession.value?.actor
+            )
+          )
+            return false;
           return true;
         }
         return false;
